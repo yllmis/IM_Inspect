@@ -38,12 +38,14 @@ The Agent must never access databases, Redis, Kafka, SQL, or shell directly. Onl
 
 Use small, reviewable commits that represent a completed stage. Follow Conventional Commits:
 
+- 提交信息使用中文描述；Conventional Commits 的 `type` 和 `scope` 保留英文，`description` 使用中文。
+
 ```text
-feat(domain): add deterministic diagnosis rules
-feat(tools): define message status contract
-test(eval): add receiver offline fixture
-docs: document Go IM data mapping
-fix(agent): stop on unsupported capability
+feat(domain): 添加确定性诊断规则
+feat(tools): 定义消息状态工具契约
+test(eval): 添加接收方离线场景
+docs: 记录 Go IM 数据映射
+fix(agent): 在能力不支持时停止
 ```
 
 Before each commit, inspect the diff and run the checks relevant to the stage. Do not commit generated secrets, local configuration, database dumps, or unverified production claims.
