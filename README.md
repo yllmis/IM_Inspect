@@ -1,0 +1,27 @@
+# IM Inspect
+
+面向客服的 IM 消息异常诊断 Agent。项目当前按小步垂直切片开发。
+
+## 当前阶段
+
+- 设计基线：项目说明、诊断状态机、工具契约、Go IM 数据契约和 Eval 场景。
+- 领域模型：Next.js/TypeScript 项目骨架，以及基于 Zod 的 Canonical Model Schema。
+- 尚未实现：Vercel AI SDK Agent Loop、工具处理器、Connector 和 Eval Runner。
+
+## 本地命令
+
+```sh
+npm install
+npm run dev
+npm run typecheck
+npm test
+npm run build
+```
+
+设计文档校验：
+
+```sh
+ruby -e 'require "yaml"; x = YAML.load_file("docs/eval-cases.yaml"); abort unless (20..30).include?(x["cases"].length)'
+```
+
+开发和测试使用本地固定数据，不需要生产凭证。Agent 不直接访问 MongoDB、MySQL、Redis、Kafka、SQL 或 Shell。
