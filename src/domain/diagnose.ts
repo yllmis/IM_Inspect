@@ -97,7 +97,9 @@ export function diagnose(input: DiagnosisInput): DiagnosisResult {
     });
   }
 
-  const writeEvidence = message.evidence.filter((item) => item.kind === "write");
+  const writeEvidence = message.evidence.filter(
+    (item) => item.kind === "write",
+  );
   if (message.persisted === false && writeEvidence.length > 0) {
     if (isUnsupported(context, "writeFailureEvents")) {
       return insufficient(base, ["supportedCapability:writeFailureEvents"]);
@@ -219,7 +221,10 @@ export function diagnose(input: DiagnosisInput): DiagnosisResult {
   }
   if (context.deliveries === undefined) {
     missingInformation.push("deliveryEvents");
-  } else if (context.deliveries.length === 0 && !context.deliveryQuery?.complete) {
+  } else if (
+    context.deliveries.length === 0 &&
+    !context.deliveryQuery?.complete
+  ) {
     missingInformation.push("completeDeliveryQuery");
   } else if (
     context.deliveries.some((delivery) => delivery.result === "attempted") &&
@@ -449,7 +454,9 @@ function stableEvidence(evidence: Evidence): string {
   return JSON.stringify(evidence);
 }
 
-function deduplicateConflicts(conflicts: EvidenceConflict[]): EvidenceConflict[] {
+function deduplicateConflicts(
+  conflicts: EvidenceConflict[],
+): EvidenceConflict[] {
   const uniqueItems = new Map<string, EvidenceConflict>();
   for (const item of conflicts) uniqueItems.set(item.subject, item);
   return [...uniqueItems.values()];

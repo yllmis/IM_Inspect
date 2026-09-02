@@ -7,8 +7,12 @@ import { DeliveryFactSchema } from "../../domain/delivery";
 import { ToolErrorCodeSchema } from "../../domain/errors";
 import { MessageFactSchema } from "../../domain/message";
 
-const FixtureBehaviorSuccessSchema = z.object({ kind: z.literal("success") }).strict();
-const FixtureBehaviorEmptySchema = z.object({ kind: z.literal("empty") }).strict();
+const FixtureBehaviorSuccessSchema = z
+  .object({ kind: z.literal("success") })
+  .strict();
+const FixtureBehaviorEmptySchema = z
+  .object({ kind: z.literal("empty") })
+  .strict();
 const FixtureBehaviorErrorSchema = z
   .object({
     kind: z.literal("error"),
@@ -59,7 +63,10 @@ export const FixtureSchema = z
   })
   .strict()
   .superRefine((fixture, context) => {
-    if (fixture.connection && fixture.connection.userId !== fixture.message.receiverId) {
+    if (
+      fixture.connection &&
+      fixture.connection.userId !== fixture.message.receiverId
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["connection", "userId"],

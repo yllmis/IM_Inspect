@@ -19,9 +19,7 @@ import { MessageFact } from "../../domain/message";
 import { Fixture, FixtureBehavior, loadFixture } from "./fixture-loader";
 
 export type FakeConnectorOperation =
-  | "getMessageStatus"
-  | "getDeliveryEvents"
-  | "getConnectionStatus";
+  "getMessageStatus" | "getDeliveryEvents" | "getConnectionStatus";
 
 export interface FakeConnectorCall {
   operation: FakeConnectorOperation;
@@ -92,7 +90,11 @@ export class FakeConnector implements Connector {
     this.calls.push({ operation: "getConnectionStatus", input: parsed });
     const behavior = this.fixture.behavior.getConnectionStatus;
     if (behavior.kind !== "success") {
-      return this.respond<ConnectionFact>("getConnectionStatus", parsed, undefined);
+      return this.respond<ConnectionFact>(
+        "getConnectionStatus",
+        parsed,
+        undefined,
+      );
     }
     if (parsed.userId !== this.fixture.message.receiverId) {
       return this.failure(
@@ -134,7 +136,12 @@ export class FakeConnector implements Connector {
         if (operation === "getDeliveryEvents") {
           return { ok: true, source: this.fixture.source.name, data: [] as T };
         }
-        return this.failure(operation, "internal", "empty behavior is only valid for delivery events", false);
+        return this.failure(
+          operation,
+          "internal",
+          "empty behavior is only valid for delivery events",
+          false,
+        );
       case "error":
         return {
           ok: false,
@@ -166,7 +173,9 @@ export class FakeConnector implements Connector {
     };
   }
 
-  private toError(behavior: Extract<FixtureBehavior, { kind: "error" }>): ToolError {
+  private toError(
+    behavior: Extract<FixtureBehavior, { kind: "error" }>,
+  ): ToolError {
     return {
       code: behavior.code,
       message: behavior.message,

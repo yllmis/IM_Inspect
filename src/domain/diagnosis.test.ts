@@ -293,8 +293,250 @@ describe("diagnose conflicts and priority", () => {
     });
 
     expect(result.classification).toBe("insufficient_data");
-    expect(result.conflicts?.some((item) => item.subject === "message.persistenceStatus")).toBe(
-      true,
-    );
+    expect(
+      result.conflicts?.some(
+        (item) => item.subject === "message.persistenceStatus",
+      ),
+    ).toBe(true);
   });
+});
+
+describe("diagnose rule coverage matrix", () => {
+  const ruleCases = [
+    {
+      name: "message_not_found",
+      input: fixtureInput("message_missing"),
+      expected: "message_not_found",
+    },
+    {
+      name: "write_failed",
+      input: fixtureInput("write_failed"),
+      expected: "write_failed",
+    },
+    {
+      name: "not_delivered",
+      input: {
+        ...fixtureInput("not_delivered"),
+        deliveryQuery: {
+          complete: true,
+          source: "fake_connector",
+          observedAt,
+          evidence: deliveryQueryEvidence,
+        },
+      },
+      expected: "not_delivered",
+    },
+    {
+      name: "receiver_offline",
+      input: fixtureInput("receiver_offline"),
+      expected: "receiver_offline",
+    },
+    {
+      name: "ack_timeout",
+      input: fixtureInput("ack_timeout"),
+      expected: "ack_timeout",
+    },
+    {
+      name: "delivered",
+      input: fixtureInput("delivered"),
+      expected: "delivered",
+    },
+  ];
+
+  it.each(ruleCases)("normal path: $name", ({ input, expected }) => {
+    expect(diagnose(input).classification).toBe(expected);
+  });
+
+  it.each([
+    ["message_not_found", { messageId: undefined }],
+    ["write_failed", { message: undefined }],
+    ["not_delivered", { deliveries: undefined }],
+    ["receiver_offline", { connection: undefined }],
+    ["ack_timeout", { deliveries: undefined }],
+    ["delivered", { deliveries: undefined }],
+  ] as const)("missing field: %s", (name, missing) => {
+    const base = ruleCases.find((item) => item.name === name);
+    const result = diagnose({ ...base!.input, ...missing });
+    expect(result.classification).toBe("insufficient_data");
+    expect(result.missingInformation.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["message_not_found", fixtureInput("message_missing")],
+    ["write_failed", fixtureInput("write_failed")],
+    ["not_delivered", fixtureInput("not_delivered")],
+    ["receiver_offline", fixtureInput("receiver_offline")],
+    ["ack_timeout", fixtureInput("ack_timeout")],
+    ["delivered", fixtureInput("delivered")],
+  ] as const)("empty/insufficient evidence path: %s", (name, input) => {
+    const result = diagnose({
+      ...input,
+      message: input.message ? { ...input.message, evidence: [] } : undefined,
+      deliveries: [],
+      deliveryQuery: undefined,
+      connection: undefined,
+    });
+    expect(result.classification).toBe("insufficient_data");
+    expect(result.evidence).toEqual([]);
+  });
+
+  it.each(ruleCases)("conflict path: $name", ({ input }) => {
+    const evidence = input.message?.evidence[0] ?? deliveryQueryEvidence;
+    const result = diagnose({
+      ...input,
+      conflicts: [
+        {
+          subject: "rule_coverage_conflict",
+          evidence: [evidence],
+          resolution: "未自动裁决，需人工或数据源修复",
+        },
+      ],
+    });
+    expect(result.classification).toBe("insufficient_data");
+    expect(result.conflicts?.[0]?.subject).toBe("rule_coverage_conflict");
+  });
+
+  it("accepts an adjacent, non-empty time boundary", () => {
+    const result = diagnose({
+      ...fixtureInput("delivered"),
+      timeRange: {
+        start: "2026-09-02T10:00:00Z",
+        end: "2026-09-02T10:00:01Z",
+      },
+    });
+    expect(result.classification).toBe("delivered");
+  });
+
+  it.each([
+    ["message_not_found", "messageLookup"],
+    ["write_failed", "writeFailureEvents"],
+    ["not_delivered", "deliveryEvents"],
+    ["receiver_offline", "historicalPresence"],
+    ["ack_timeout", "ackTracking"],
+    ["delivered", "deliveryEvents"],
+  ] as const)("unsupported capability blocks %s", (name, capability) => {
+    const base = ruleCases.find((item) => item.name === name)!;
+    const result = diagnose({
+      ...base.input,
+      capabilities: { [capability]: "unsupported" },
+    });
+    expect(result.classification).toBe("insufficient_data");
+    expect(result.unsupportedCapabilities).toContain(capability);
+  });
+
+  it.each([
+    ["message_not_found", "not_found"],
+    ["write_failed", "timeout"],
+    ["not_delivered", "timeout"],
+    ["receiver_offline", "timeout"],
+    ["ack_timeout", "timeout"],
+    ["delivered", "timeout"],
+  ] as const)("tool error blocks %s without creating facts", (name, code) => {
+    const base = ruleCases.find((item) => item.name === name)!;
+    const result = diagnose({
+      rawText: base.input.rawText,
+      messageId: base.input.messageId,
+      toolErrors: [
+        {
+          tool: "get_message_status",
+          error: {
+            code,
+            message: `synthetic ${code}`,
+            retryable: code === "timeout",
+          },
+        },
+      ],
+    });
+    expect(result.classification).toBe("insufficient_data");
+    expect(result.facts).toEqual([]);
+  });
+
+  const invalidStateCases = [
+    {
+      name: "message_not_found",
+      input: {
+        ...fixtureInput("message_missing"),
+        deliveries: fixtureInput("delivered").deliveries,
+      },
+    },
+    {
+      name: "write_failed",
+      input: {
+        ...fixtureInput("write_failed"),
+        message: {
+          ...fixtureInput("write_failed").message!,
+          status: "delivered" as const,
+        },
+      },
+    },
+    {
+      name: "not_delivered",
+      input: {
+        ...fixtureInput("not_delivered"),
+        message: {
+          ...fixtureInput("not_delivered").message!,
+          status: "delivered" as const,
+        },
+        deliveries: [
+          {
+            messageId: "msg_not_delivered",
+            receiverId: "user_not_delivered",
+            attemptId: "attempt_not_delivered_failed",
+            attemptedAt: observedAt,
+            result: "failed" as const,
+            errorCode: "socket_write_failed",
+            evidence: [
+              {
+                id: "delivery:not_delivered_failed",
+                source: "fake_connector",
+                kind: "delivery" as const,
+                observedAt,
+                field: "delivery_result",
+                value: "failed",
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      name: "receiver_offline",
+      input: {
+        ...fixtureInput("receiver_offline"),
+        message: {
+          ...fixtureInput("receiver_offline").message!,
+          persisted: false,
+          status: "delivered" as const,
+        },
+      },
+    },
+    {
+      name: "ack_timeout",
+      input: {
+        ...fixtureInput("ack_timeout"),
+        message: {
+          ...fixtureInput("ack_timeout").message!,
+          status: "delivered" as const,
+        },
+      },
+    },
+    {
+      name: "delivered",
+      input: {
+        ...fixtureInput("delivered"),
+        message: {
+          ...fixtureInput("delivered").message!,
+          persisted: false,
+        },
+      },
+    },
+  ];
+
+  it.each(invalidStateCases)(
+    "invalid state combination blocks $name",
+    ({ input }) => {
+      const result = diagnose(input);
+      expect(result.classification).toBe("insufficient_data");
+    },
+  );
 });

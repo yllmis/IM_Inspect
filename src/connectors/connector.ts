@@ -1,20 +1,14 @@
 import { z } from "zod";
 
 import { ConnectionFact, ConnectionFactSchema } from "../domain/connection";
-import {
-  DeliveryFact,
-  DeliveryFactSchema,
-} from "../domain/delivery";
+import { DeliveryFact, DeliveryFactSchema } from "../domain/delivery";
 import {
   ConnectorCapabilities,
   ConnectorCapabilitiesSchema,
   ToolError,
   ToolErrorSchema,
 } from "../domain/errors";
-import {
-  MessageFact,
-  MessageFactSchema,
-} from "../domain/message";
+import { MessageFact, MessageFactSchema } from "../domain/message";
 
 export const MessageLookupInputSchema = z
   .object({ messageId: z.string().min(1).max(128) })
@@ -45,9 +39,7 @@ export const ConnectionStatusInputSchema = z
     at: z.string().datetime({ offset: true }),
   })
   .strict();
-export type ConnectionStatusInput = z.infer<
-  typeof ConnectionStatusInputSchema
->;
+export type ConnectionStatusInput = z.infer<typeof ConnectionStatusInputSchema>;
 
 export const ConnectorSuccessSchema = z
   .object({
@@ -91,4 +83,3 @@ export const ConnectorFactsSchema = z.object({
   deliveries: z.array(DeliveryFactSchema),
   connection: ConnectionFactSchema.nullable(),
 });
-

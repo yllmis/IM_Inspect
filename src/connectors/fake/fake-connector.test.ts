@@ -34,7 +34,9 @@ describe("FakeConnector", () => {
 
   it("returns missing message without inferring a write failure", async () => {
     const connector = new FakeConnector("message_missing");
-    const result = await connector.getMessageStatus({ messageId: "msg_missing" });
+    const result = await connector.getMessageStatus({
+      messageId: "msg_missing",
+    });
 
     expect(result).toMatchObject({ ok: true });
     if (result.ok) {
@@ -48,12 +50,16 @@ describe("FakeConnector", () => {
 
   it("returns explicit write failure evidence", async () => {
     const connector = new FakeConnector("write_failed");
-    const result = await connector.getMessageStatus({ messageId: "msg_write_failed" });
+    const result = await connector.getMessageStatus({
+      messageId: "msg_write_failed",
+    });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.persisted).toBe(false);
-      expect(result.data.evidence.some((item) => item.kind === "write")).toBe(true);
+      expect(result.data.evidence.some((item) => item.kind === "write")).toBe(
+        true,
+      );
     }
   });
 
@@ -131,26 +137,37 @@ describe("FakeConnector", () => {
 
   it("is deterministic across repeated calls", async () => {
     const connector = new FakeConnector("delivered");
-    const first = await connector.getMessageStatus({ messageId: "msg_delivered" });
-    const second = await connector.getMessageStatus({ messageId: "msg_delivered" });
+    const first = await connector.getMessageStatus({
+      messageId: "msg_delivered",
+    });
+    const second = await connector.getMessageStatus({
+      messageId: "msg_delivered",
+    });
     expect(second).toEqual(first);
   });
 
   it("does not leak facts for a different message or user", async () => {
     const connector = new FakeConnector("receiver_offline");
-    const message = await connector.getMessageStatus({ messageId: "other_message" });
+    const message = await connector.getMessageStatus({
+      messageId: "other_message",
+    });
     const connection = await connector.getConnectionStatus({
       userId: "other_user",
       at: observedAt,
     });
 
     expect(message).toMatchObject({ ok: false, error: { code: "not_found" } });
-    expect(connection).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(connection).toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
   });
 
   it("reports unsupported capability explicitly", async () => {
     const connector = new FakeConnector("message_missing");
-    expect(capabilityStatusFor(connector, "getConnectionStatus")).toBe("unsupported");
+    expect(capabilityStatusFor(connector, "getConnectionStatus")).toBe(
+      "unsupported",
+    );
     const result = await connector.getConnectionStatus({
       userId: "user_missing_receiver",
       at: observedAt,
