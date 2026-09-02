@@ -5,6 +5,9 @@ import {
   ConnectorResult,
   DeliveryEventsInput,
   DeliveryEventsInputSchema,
+  FindUserOrMessageInput,
+  FindUserOrMessageInputSchema,
+  FindUserOrMessageResult,
   MessageLookupInput,
   MessageLookupInputSchema,
 } from "../connector";
@@ -19,7 +22,10 @@ import { MessageFact } from "../../domain/message";
 import { Fixture, FixtureBehavior, loadFixture } from "./fixture-loader";
 
 export type FakeConnectorOperation =
-  "getMessageStatus" | "getDeliveryEvents" | "getConnectionStatus";
+  | "findUserOrMessage"
+  | "getMessageStatus"
+  | "getDeliveryEvents"
+  | "getConnectionStatus";
 
 export interface FakeConnectorCall {
   operation: FakeConnectorOperation;
@@ -30,6 +36,7 @@ const capabilityByOperation: Record<
   FakeConnectorOperation,
   keyof ConnectorCapabilities
 > = {
+  findUserOrMessage: "messageLookup",
   getMessageStatus: "messageLookup",
   getDeliveryEvents: "deliveryEvents",
   getConnectionStatus: "historicalPresence",
@@ -41,6 +48,56 @@ export class FakeConnector implements Connector {
 
   constructor(fixtureName: string, fixtureDirectory?: string) {
     this.fixture = loadFixture(fixtureName, fixtureDirectory);
+  }
+
+  async findUserOrMessage(
+    input: FindUserOrMessageInput,
+  ): Promise<ConnectorResult<FindUserOrMessageResult>> {
+    const parsed = FindUserOrMessageInputSchema.parse(input);
+    this.calls.push({ operation: "findUserOrMessage", input: parsed });
+    const behavior = this.fixture.behavior.getMessageStatus;
+    if (behavior.kind === "unsupported") {
+      return this.failure(
+        "findUserOrMessage",
+        "unsupported_capability",
+        `${behavior.capability} is not supported by this connector`,
+        false,
+        { capability: behavior.capability },
+      );
+    }
+    const matches = [this.fixture.message]
+      .filter((message) => {
+        if (parsed.messageId && parsed.messageId !== message.messageId)
+          return false;
+        if (
+          parsed.userId &&
+          parsed.userId !== message.receiverId &&
+          parsed.userId !== message.senderId
+        )
+          return false;
+        if (
+          parsed.conversationId &&
+          parsed.conversationId !== message.conversationId
+        )
+          return false;
+        return true;
+      })
+      .map((message) => ({
+        entityType: "message" as const,
+        userId: message.receiverId,
+        conversationId: message.conversationId,
+        messageId: message.messageId,
+        observedAt:
+          message.statusAt ??
+          message.createdAt ??
+          this.fixture.source.observedAt,
+        evidence: message.evidence,
+      }));
+    return this.respond("findUserOrMessage", parsed, {
+      resolutionStatus: matches.length === 1 ? "unique" : "none",
+      matches,
+      truncated: false,
+    });
   }
 
   getCapabilities(): ConnectorCapabilities {
@@ -120,7 +177,7 @@ export class FakeConnector implements Connector {
     input: unknown,
     data: T | undefined,
   ): ConnectorResult<T> {
-    const behavior = this.fixture.behavior[operation];
+    const behavior = this.behaviorFor(operation);
     switch (behavior.kind) {
       case "success":
         if (data === undefined) {
@@ -156,7 +213,15 @@ export class FakeConnector implements Connector {
           false,
           { capability: behavior.capability, input },
         );
+      default:
+        throw new Error("unsupported fixture behavior");
     }
+  }
+
+  private behaviorFor(operation: FakeConnectorOperation): FixtureBehavior {
+    return operation === "findUserOrMessage"
+      ? this.fixture.behavior.getMessageStatus
+      : this.fixture.behavior[operation];
   }
 
   private failure(
@@ -187,7 +252,7 @@ export class FakeConnector implements Connector {
   private capabilityFor(
     operation: FakeConnectorOperation,
   ): ConnectorCapabilityStatus {
-    const behavior = this.fixture.behavior[operation];
+    const behavior = this.behaviorFor(operation);
     return behavior.kind === "unsupported" ? "unsupported" : "supported";
   }
 }
