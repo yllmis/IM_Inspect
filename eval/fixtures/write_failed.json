@@ -1,0 +1,37 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "write_failed",
+    "description": "消息写入持久化存储时有明确失败证据",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_write_failed",
+    "receiverId": "user_write_failed",
+    "status": "failed",
+    "exists": true,
+    "persisted": false,
+    "evidence": [
+      {
+        "id": "fixture:write_failed:insert",
+        "source": "fixture:write_failed",
+        "kind": "write",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "mongo_insert",
+        "value": "failed",
+        "metadata": { "errorClass": "duplicate_or_storage_error" }
+      }
+    ]
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

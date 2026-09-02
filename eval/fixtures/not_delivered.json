@@ -1,0 +1,36 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "not_delivered",
+    "description": "消息已经持久化，但投递事件查询窗口内没有事件",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_not_delivered",
+    "receiverId": "user_not_delivered",
+    "status": "persisted",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:not_delivered:persisted",
+        "source": "fixture:not_delivered",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

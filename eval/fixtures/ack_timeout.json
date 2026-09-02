@@ -1,0 +1,54 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "ack_timeout",
+    "description": "消息已持久化，投递后在规定窗口内未收到 ACK",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_ack_timeout",
+    "receiverId": "user_ack_timeout",
+    "status": "persisted",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:ack_timeout:persisted",
+        "source": "fixture:ack_timeout",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "messageId": "msg_ack_timeout",
+      "receiverId": "user_ack_timeout",
+      "attemptId": "attempt_ack_timeout_1",
+      "attemptedAt": "2026-09-02T09:59:30Z",
+      "result": "timeout",
+      "evidence": [
+        {
+          "id": "fixture:ack_timeout:ack",
+          "source": "fixture:ack_timeout",
+          "kind": "delivery",
+          "observedAt": "2026-09-02T10:00:00Z",
+          "field": "ack",
+          "value": "timeout"
+        }
+      ]
+    }
+  ],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "receiver_offline",
+    "description": "消息已持久化，接收者在观测时刻处于离线状态",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_receiver_offline",
+    "receiverId": "user_receiver_offline",
+    "status": "persisted",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:receiver_offline:persisted",
+        "source": "fixture:receiver_offline",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "messageId": "msg_receiver_offline",
+      "receiverId": "user_receiver_offline",
+      "attemptId": "attempt_receiver_offline_1",
+      "attemptedAt": "2026-09-02T10:00:00Z",
+      "result": "attempted",
+      "evidence": [
+        {
+          "id": "fixture:receiver_offline:delivery",
+          "source": "fixture:receiver_offline",
+          "kind": "delivery",
+          "observedAt": "2026-09-02T10:00:00Z",
+          "field": "delivery_attempt",
+          "value": "attempted"
+        }
+      ]
+    }
+  ],
+  "connection": {
+    "userId": "user_receiver_offline",
+    "state": "offline",
+    "observedAt": "2026-09-02T10:00:00Z",
+    "historical": true,
+    "evidence": [
+      {
+        "id": "fixture:receiver_offline:connection",
+        "source": "fixture:receiver_offline",
+        "kind": "connection",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "connection_state",
+        "value": "offline"
+      }
+    ]
+  },
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": { "kind": "success" }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "message_missing",
+    "description": "消息 ID 存在于请求中，但消息存储中没有对应记录",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_missing",
+    "receiverId": "user_missing_receiver",
+    "status": "unknown",
+    "exists": false,
+    "persisted": null,
+    "evidence": [
+      {
+        "id": "fixture:message_missing:lookup",
+        "source": "fixture:message_missing",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "message_lookup",
+        "value": "not_found"
+      }
+    ]
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

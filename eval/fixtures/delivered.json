@@ -1,0 +1,55 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "delivered",
+    "description": "消息已持久化并成功投递",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_delivered",
+    "receiverId": "user_delivered",
+    "status": "delivered",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:delivered:persisted",
+        "source": "fixture:delivered",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "messageId": "msg_delivered",
+      "receiverId": "user_delivered",
+      "attemptId": "attempt_delivered_1",
+      "attemptedAt": "2026-09-02T09:59:30Z",
+      "result": "success",
+      "deliveredAt": "2026-09-02T09:59:31Z",
+      "evidence": [
+        {
+          "id": "fixture:delivered:delivery",
+          "source": "fixture:delivered",
+          "kind": "delivery",
+          "observedAt": "2026-09-02T10:00:00Z",
+          "field": "delivery_result",
+          "value": "success"
+        }
+      ]
+    }
+  ],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}
