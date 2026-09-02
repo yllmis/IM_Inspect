@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ConnectionFactSchema } from "./connection";
 import { DeliveryFactSchema } from "./delivery";
 import { EvidenceConflictSchema, EvidenceSchema } from "./evidence";
+import { ConnectorCapabilitiesSchema, ToolErrorSchema } from "./errors";
 import { MessageFactSchema } from "./message";
 
 export const DiagnosisClassificationSchema = z.enum([
@@ -37,6 +38,51 @@ export const DiagnosisTimeRangeSchema = z
   });
 export type DiagnosisTimeRange = z.infer<typeof DiagnosisTimeRangeSchema>;
 
+export const MatchResolutionSchema = z.enum([
+  "unique",
+  "multiple",
+  "none",
+  "insufficient_data",
+]);
+export type MatchResolution = z.infer<typeof MatchResolutionSchema>;
+
+export const DiagnosisToolNameSchema = z.enum([
+  "find_user_or_message",
+  "get_message_status",
+  "get_delivery_events",
+  "get_connection_status",
+]);
+export type DiagnosisToolName = z.infer<typeof DiagnosisToolNameSchema>;
+
+export const DiagnosisToolErrorSchema = z
+  .object({
+    tool: DiagnosisToolNameSchema,
+    error: ToolErrorSchema,
+  })
+  .strict();
+export type DiagnosisToolError = z.infer<typeof DiagnosisToolErrorSchema>;
+
+export const DeliveryQueryObservationSchema = z
+  .object({
+    complete: z.boolean(),
+    source: z.string().min(1).max(128),
+    observedAt: z.string().datetime({ offset: true }),
+    evidence: EvidenceSchema,
+  })
+  .strict()
+  .superRefine((observation, context) => {
+    if (observation.evidence.kind !== "delivery") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["evidence", "kind"],
+        message: "delivery query observation requires delivery evidence",
+      });
+    }
+  });
+export type DeliveryQueryObservation = z.infer<
+  typeof DeliveryQueryObservationSchema
+>;
+
 export const DiagnosisInputSchema = z
   .object({
     requestId: z.string().min(1).max(128).optional(),
@@ -46,6 +92,14 @@ export const DiagnosisInputSchema = z
     messageId: z.string().min(1).max(128).optional(),
     timeRange: DiagnosisTimeRangeSchema.optional(),
     problemType: z.string().min(1).max(128).optional(),
+    matchResolution: MatchResolutionSchema.optional(),
+    message: MessageFactSchema.optional(),
+    deliveries: z.array(DeliveryFactSchema).optional(),
+    connection: ConnectionFactSchema.optional(),
+    deliveryQuery: DeliveryQueryObservationSchema.optional(),
+    toolErrors: z.array(DiagnosisToolErrorSchema).optional(),
+    capabilities: ConnectorCapabilitiesSchema.optional(),
+    conflicts: z.array(EvidenceConflictSchema).optional(),
   })
   .strict();
 export type DiagnosisInput = z.infer<typeof DiagnosisInputSchema>;
@@ -58,6 +112,7 @@ export const DiagnosisResultSchema = z
     possibleCauses: z.array(z.string()),
     missingInformation: z.array(z.string()),
     unsupportedCapabilities: z.array(z.string()),
+    toolErrors: z.array(DiagnosisToolErrorSchema).optional(),
     conflicts: z.array(EvidenceConflictSchema).optional(),
     recommendedAction: RecommendedActionSchema,
     message: MessageFactSchema.optional(),
