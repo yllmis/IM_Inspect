@@ -7,7 +7,13 @@
 - 设计基线：项目说明、诊断状态机、工具契约、Go IM 数据契约和 Eval 场景。
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
 - Connector：正式 Connector 接口、Fake Connector，以及 6 个固定核心 Fixture（消息缺失、写入失败、未投递、接收者离线、ACK 超时、成功投递）。
-- 尚未实现：Vercel AI SDK Agent Loop、工具处理器、GoIMConnector 和 Eval Runner。
+- Agent Loop 已有 Vercel AI SDK 初版骨架；上下文提取、受控混合循环和 Agent 专项测试仍待完善。
+- 尚未实现：GoIMConnector 和 Eval Runner。
+
+## 架构图
+
+- [MVP 架构图](docs/mvp-architecture.md)
+- [Agent 时序图](docs/agent-sequence.md)
 
 ## 本地命令
 

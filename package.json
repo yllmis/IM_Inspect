@@ -13,6 +13,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.43",
+    "ai": "^7.0.91",
     "next": "^15.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
