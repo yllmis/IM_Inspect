@@ -9,7 +9,7 @@ import {
   unwrapConnector,
 } from "./handler-utils";
 
-const resultSchema = z
+export const GetDeliveryEventsResultSchema = z
   .object({
     events: z.array(DeliveryFactSchema).max(50),
     unsupportedCapabilities: z.array(z.string()),
@@ -34,7 +34,7 @@ export function getDeliveryEventsDefinition(
         ),
       );
       const truncated = events.length > 50;
-      return parseResult(resultSchema, {
+      return parseResult(GetDeliveryEventsResultSchema, {
         events: events.slice(0, 50),
         unsupportedCapabilities: [],
         truncated,

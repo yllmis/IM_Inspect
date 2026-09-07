@@ -9,7 +9,7 @@ import {
   unwrapConnector,
 } from "./handler-utils";
 
-const resultSchema = z
+export const GetMessageStatusResultSchema = z
   .object({
     message: MessageFactSchema,
     unsupportedCapabilities: z.array(z.string()),
@@ -30,7 +30,7 @@ export function getMessageStatusDefinition(
       const message = unwrapConnector(
         await connector.getMessageStatus(MessageLookupInputSchema.parse(args)),
       );
-      return parseResult(resultSchema, {
+      return parseResult(GetMessageStatusResultSchema, {
         message,
         unsupportedCapabilities: [],
       });

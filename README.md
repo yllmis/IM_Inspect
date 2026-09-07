@@ -8,6 +8,7 @@
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
 - Connector：正式 Connector 接口、Fake Connector，以及 6 个固定核心 Fixture（消息缺失、写入失败、未投递、接收者离线、ACK 超时、成功投递）。
 - Agent Loop 已有 Vercel AI SDK 初版骨架；上下文提取、受控混合循环和 Agent 专项测试仍待完善。
+- 多轮状态基础：`AgentSessionState`、内存 `StateStore`、受控状态合并、诊断输入投影和按用途裁剪的模型上下文；尚未接入 Agent Loop。
 - 尚未实现：GoIMConnector 和 Eval Runner。
 
 ## 架构图

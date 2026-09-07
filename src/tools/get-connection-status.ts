@@ -12,7 +12,7 @@ import {
   unwrapConnector,
 } from "./handler-utils";
 
-const resultSchema = z
+export const GetConnectionStatusResultSchema = z
   .object({
     connection: ConnectionFactSchema,
     unsupportedCapabilities: z.array(z.string()),
@@ -35,7 +35,7 @@ export function getConnectionStatusDefinition(
           ConnectionStatusInputSchema.parse(args),
         ),
       );
-      return parseResult(resultSchema, {
+      return parseResult(GetConnectionStatusResultSchema, {
         connection,
         unsupportedCapabilities: connection.historical
           ? []
