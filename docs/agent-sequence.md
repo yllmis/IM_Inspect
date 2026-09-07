@@ -8,6 +8,7 @@ sequenceDiagram
     actor CS as 客服
     participant API as Next.js API
     participant A as Agent Loop
+    participant S as StateStore
     participant LLM as MiMo
     participant R as Tool Registry
     participant C as Connector
@@ -15,9 +16,11 @@ sequenceDiagram
     participant D as diagnose()
     participant Repo as Draft Repository
 
-    CS->>API: POST /api/chat {text}
+    CS->>API: POST /api/chat {sessionId?, text}
     API->>API: 创建 requestId/runId、权限、deadline、调用预算
-    API->>A: runAgent(text, model, registry, context)
+    API->>A: runAgent(sessionId, text, model, registry, stateStore, context)
+    A->>S: load 或 create AgentSessionState
+    S-->>A: working state + version
 
     A->>LLM: 提取候选 messageId/userId/timeRange
     LLM-->>A: 候选上下文（不是事实）
@@ -29,8 +32,9 @@ sequenceDiagram
         loop 受控工具循环（最多步数/调用数/截止时间）
             A->>LLM: 提供当前上下文和已返回工具结果
             LLM-->>A: 选择一个白名单工具及参数
+            A->>A: 相同工具和参数哈希去重
             A->>R: execute(toolName, args, context)
-            R->>R: 白名单、权限、Schema、预算、重复调用检查
+            R->>R: 白名单、权限、Schema、预算检查
 
             alt 参数非法 / 无权限 / 未确认写操作
                 R-->>A: ToolError（不是诊断事实）
@@ -68,6 +72,8 @@ sequenceDiagram
         R-->>A: 草稿结果
     end
 
+    A->>S: save(state, expectedVersion)
+    S-->>A: 新 version 或 version_conflict
     A-->>API: 结构化执行结果、DiagnosisResult、Trace
     API-->>CS: 客服回复、事实、证据和必要的后续动作
 ```

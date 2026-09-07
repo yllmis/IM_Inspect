@@ -2,15 +2,31 @@ import { NextResponse } from "next/server";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 
+import { runAgent } from "../../../src/agent/agent";
+import {
+  InMemoryStateStore,
+  StateStoreError,
+} from "../../../src/agent/state-store";
+import { IdentifierSchema } from "../../../src/connectors/connector";
 import { FakeConnector } from "../../../src/connectors/fake/fake-connector";
 import { createToolContext } from "../../../src/tools/context";
 import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
 import { ToolRegistry } from "../../../src/tools/registry";
-import { runAgent } from "../../../src/agent/agent";
 
 const RequestSchema = z
-  .object({ text: z.string().trim().min(1).max(20_000) })
+  .object({
+    sessionId: IdentifierSchema.optional(),
+    text: z.string().trim().min(1).max(20_000),
+  })
   .strict();
+
+// 仅用于本地 MVP。进程重启或 Serverless 实例切换会丢失状态；
+// 接入真实客服环境时替换为实现 StateStore 的持久化存储。
+const stateStore = new InMemoryStateStore();
+const registry = new ToolRegistry({
+  connector: new FakeConnector("delivered"),
+  draftRepository: createInMemoryDraftRepository(),
+});
 
 export async function POST(request: Request) {
   const parsed = RequestSchema.safeParse(
@@ -42,17 +58,28 @@ export async function POST(request: Request) {
       "diagnosis:read",
       "diagnosis:read_delivery",
       "diagnosis:read_connection",
-      "escalation:draft:create",
     ],
   });
-  const result = await runAgent({
-    text: parsed.data.text,
-    model: provider.chatModel(modelId),
-    toolContext,
-    registry: new ToolRegistry({
-      connector: new FakeConnector("delivered"),
-      draftRepository: createInMemoryDraftRepository(),
-    }),
-  });
-  return NextResponse.json({ ...result, traces: toolContext.traces });
+  try {
+    const result = await runAgent({
+      sessionId: parsed.data.sessionId ?? crypto.randomUUID(),
+      text: parsed.data.text,
+      model: provider.chatModel(modelId),
+      toolContext,
+      registry,
+      stateStore,
+    });
+    return NextResponse.json({ ...result, traces: toolContext.traces });
+  } catch (error) {
+    if (error instanceof StateStoreError && error.code === "version_conflict") {
+      return NextResponse.json(
+        { error: "state_version_conflict", retryable: true },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { error: "agent_execution_failed" },
+      { status: 502 },
+    );
+  }
 }

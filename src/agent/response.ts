@@ -1,4 +1,17 @@
-import { DiagnosisResult } from "../domain/diagnosis";
+import { z } from "zod";
+
+import {
+  DiagnosisClassificationSchema,
+  DiagnosisResult,
+} from "../domain/diagnosis";
+
+export const GeneratedAgentReplySchema = z
+  .object({
+    classification: DiagnosisClassificationSchema,
+    reply: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+export type GeneratedAgentReply = z.infer<typeof GeneratedAgentReplySchema>;
 
 export interface AgentResponse {
   reply: string;
