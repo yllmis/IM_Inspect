@@ -7,6 +7,8 @@ flowchart TD
     U["客服用户<br/>自然语言问题"] --> API["Next.js API<br/>POST /api/chat"]
 
     API --> AGENT["Vercel AI SDK Agent Loop<br/>上下文提取 / 工具选择 / 追问 / 回复生成"]
+    API --> STATE_REPO["StateStore 接口<br/>会话状态 / 乐观版本控制"]
+    STATE_REPO --> MYSQL_STATE[("MySQL agent_sessions<br/>当前持久化实现")]
 
     AGENT --> TOOLS["受控 Tool Registry<br/>白名单、Zod、权限、超时、重试、限流、Trace"]
 
@@ -42,7 +44,7 @@ flowchart TD
     CONFIRM -- 否 --> REPLY
     CONFIRM -- 是 --> STORE[("Draft Repository<br/>当前内存实现；后续 MySQL")]
 
-    AGENT -. 禁止直连 .-> DB[("MongoDB / Redis / Kafka / SQL / Shell")]
+    AGENT -. 禁止直连 .-> DB[("IM 数据库 / Redis / Kafka / SQL / Shell")]
 ```
 
 ## 分层职责
@@ -50,6 +52,7 @@ flowchart TD
 | 层 | 负责什么 | 不负责什么 |
 | --- | --- | --- |
 | Next.js API | 接收请求、创建服务端上下文、返回结构化结果 | 不直接查询 IM 数据库 |
+| StateStore | 通过 Repository 接口保存诊断工作状态并执行乐观锁 | 不向模型暴露 SQL 或数据库连接 |
 | Agent Loop | 提取候选字段、选择白名单工具、追问、解释结果 | 不决定数据库事实、最终分类或权限 |
 | Tool Registry | 参数校验、鉴权、超时、重试、限流、脱敏和 Trace | 不执行任意 SQL/Shell |
 | Connector | 访问具体 IM 的受控接口并映射为 Canonical Model | 不进行最终根因分类 |

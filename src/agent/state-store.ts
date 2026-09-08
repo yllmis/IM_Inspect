@@ -21,7 +21,8 @@ export type StateStoreErrorCode =
   | "not_found"
   | "version_conflict"
   | "capacity_exceeded"
-  | "expired";
+  | "expired"
+  | "invalid_state";
 
 export class StateStoreError extends Error {
   constructor(

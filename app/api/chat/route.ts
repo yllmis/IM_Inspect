@@ -3,12 +3,15 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 
 import { runAgent } from "../../../src/agent/agent";
-import {
-  InMemoryStateStore,
-  StateStoreError,
-} from "../../../src/agent/state-store";
+import { StateStoreError } from "../../../src/agent/state-store";
 import { IdentifierSchema } from "../../../src/connectors/connector";
 import { FakeConnector } from "../../../src/connectors/fake/fake-connector";
+import {
+  createMySqlPool,
+  MySqlConfigurationError,
+  readMySqlConnectionConfig,
+} from "../../../src/persistence/mysql/connection";
+import { MySqlStateStore } from "../../../src/persistence/mysql/mysql-state-store";
 import { createToolContext } from "../../../src/tools/context";
 import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
 import { ToolRegistry } from "../../../src/tools/registry";
@@ -20,9 +23,7 @@ const RequestSchema = z
   })
   .strict();
 
-// 仅用于本地 MVP。进程重启或 Serverless 实例切换会丢失状态；
-// 接入真实客服环境时替换为实现 StateStore 的持久化存储。
-const stateStore = new InMemoryStateStore();
+let stateStore: MySqlStateStore | undefined;
 const registry = new ToolRegistry({
   connector: new FakeConnector("delivered"),
   draftRepository: createInMemoryDraftRepository(),
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
     ],
   });
   try {
+    stateStore ??= new MySqlStateStore(
+      createMySqlPool(readMySqlConnectionConfig()),
+    );
     const result = await runAgent({
       sessionId: parsed.data.sessionId ?? crypto.randomUUID(),
       text: parsed.data.text,
@@ -71,6 +75,12 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ...result, traces: toolContext.traces });
   } catch (error) {
+    if (error instanceof MySqlConfigurationError) {
+      return NextResponse.json(
+        { error: "database_not_configured" },
+        { status: 503 },
+      );
+    }
     if (error instanceof StateStoreError && error.code === "version_conflict") {
       return NextResponse.json(
         { error: "state_version_conflict", retryable: true },

@@ -8,7 +8,7 @@
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
 - Connector：正式 Connector 接口、Fake Connector，以及 6 个固定核心 Fixture（消息缺失、写入失败、未投递、接收者离线、ACK 超时、成功投递）。
 - Agent Loop：已接入结构化上下文提取、4 个只读诊断工具、逐次事实合并、确定性诊断、受控回复和重复调用停止规则；升级草稿写操作不进入普通诊断循环。
-- 多轮状态：已接入 `AgentSessionState`、内存 `StateStore`、乐观版本控制和按用途裁剪的模型上下文；API 使用相同 `sessionId` 继续诊断。本地内存状态不具备跨进程持久性。
+- 多轮状态：保留内存 `StateStore` 用于单元测试，API 已接入 `MySqlStateStore`；使用相同 `sessionId` 继续诊断，并通过 `version` 乐观锁阻止并发覆盖。
 - 尚未实现：GoIMConnector 和 Eval Runner。
 
 ## 架构图
@@ -25,6 +25,30 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## MySQL
+
+复制环境变量模板并填写本地凭据：
+
+```sh
+cp .env.example .env.local
+```
+
+创建独立数据库和最小权限账号后执行迁移：
+
+```sh
+npm run db:migrate
+```
+
+应用通过 `StateStore` 接口访问 MySQL；Agent、模型和工具均不能直接执行 SQL。当前迁移只创建 `agent_sessions`，后续的 Agent Run、Tool Call、诊断结果和升级草稿将按独立切片增加。
+
+如需运行真实 MySQL Repository 集成测试，将 `MYSQL_TEST_URL` 指向隔离的测试数据库，然后执行：
+
+```sh
+npm run test:mysql
+```
+
+未配置 `MYSQL_TEST_URL` 时，普通测试会明确跳过 MySQL 集成用例，不会连接或修改本地数据库。
 
 设计文档校验：
 

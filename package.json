@@ -5,16 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate-mysql.mjs",
     "start": "next start",
     "format": "prettier --write .",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:mysql": "vitest run src/persistence/mysql/mysql-state-store.integration.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.43",
     "ai": "^7.0.91",
+    "mysql2": "^3.24.4",
     "next": "^15.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
