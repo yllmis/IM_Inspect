@@ -27,6 +27,15 @@ describe("canonical domain schemas", () => {
     ).toThrow();
   });
 
+  it("rejects raw objects as evidence values", () => {
+    expect(() =>
+      EvidenceSchema.parse({
+        ...evidence,
+        value: { rawDatabaseRow: { message_body: "secret" } },
+      }),
+    ).toThrow();
+  });
+
   it("rejects a persisted message that does not exist", () => {
     expect(() =>
       MessageFactSchema.parse({

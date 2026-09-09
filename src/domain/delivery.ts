@@ -26,8 +26,11 @@ export const DeliveryFactSchema = z
     deliveredAt: z.string().datetime({ offset: true }).optional(),
     ackedAt: z.string().datetime({ offset: true }).optional(),
     errorCode: z.string().min(1).max(128).optional(),
-    evidence: z.array(EvidenceSchema),
-    metadata: z.record(z.string()).optional(),
+    evidence: z.array(EvidenceSchema).max(20),
+    metadata: z
+      .record(z.string().max(256))
+      .refine((value) => Object.keys(value).length <= 10)
+      .optional(),
   })
   .strict()
   .superRefine((delivery, context) => {

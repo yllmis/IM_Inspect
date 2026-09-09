@@ -155,6 +155,11 @@ describe("runAgent stateful loop", () => {
         deliveries: [{ messageId: "msg_delivered", result: "success" }],
       },
       diagnosisResult: { classification: "delivered" },
+      connectorCapabilities: {
+        messageLookup: "supported",
+        deliveryEvents: "supported",
+        historicalPresence: "unsupported",
+      },
     });
 
     const exposedToolNames = model.doGenerateCalls[1]?.tools?.map(

@@ -5,6 +5,7 @@ import {
   ConnectorResult,
   DeliveryEventsInput,
   DeliveryEventsInputSchema,
+  DeliveryEventsPage,
   FindUserOrMessageInput,
   FindUserOrMessageInputSchema,
   FindUserOrMessageResult,
@@ -93,10 +94,16 @@ export class FakeConnector implements Connector {
           this.fixture.source.observedAt,
         evidence: message.evidence,
       }));
+    const boundedMatches = matches.slice(0, parsed.limit);
     return this.respond("findUserOrMessage", parsed, {
-      resolutionStatus: matches.length === 1 ? "unique" : "none",
-      matches,
-      truncated: false,
+      resolutionStatus:
+        matches.length === 0
+          ? "none"
+          : matches.length === 1
+            ? "unique"
+            : "multiple",
+      matches: boundedMatches,
+      truncated: matches.length > parsed.limit,
     });
   }
 
@@ -126,7 +133,7 @@ export class FakeConnector implements Connector {
 
   async getDeliveryEvents(
     input: DeliveryEventsInput,
-  ): Promise<ConnectorResult<DeliveryFact[]>> {
+  ): Promise<ConnectorResult<DeliveryEventsPage>> {
     const parsed = DeliveryEventsInputSchema.parse(input);
     this.calls.push({ operation: "getDeliveryEvents", input: parsed });
     if (parsed.messageId !== this.fixture.message.messageId) {
@@ -137,7 +144,23 @@ export class FakeConnector implements Connector {
         false,
       );
     }
-    return this.respond("getDeliveryEvents", parsed, this.fixture.deliveries);
+    const effectiveTimeRange =
+      parsed.timeRange ?? this.defaultDeliveryTimeRange();
+    const behavior = this.behaviorFor("getDeliveryEvents");
+    const matchingEvents =
+      behavior.kind === "empty"
+        ? []
+        : this.fixture.deliveries.filter((event) =>
+            isEventWithinRange(event, effectiveTimeRange),
+          );
+    const truncated = matchingEvents.length > parsed.limit;
+    return this.respond("getDeliveryEvents", parsed, {
+      events: matchingEvents.slice(0, parsed.limit),
+      complete: !truncated,
+      truncated,
+      effectiveTimeRange,
+      sourceReference: `fixture:${this.fixture.source.name}:delivery-events`,
+    });
   }
 
   async getConnectionStatus(
@@ -191,7 +214,15 @@ export class FakeConnector implements Connector {
         return { ok: true, source: this.fixture.source.name, data };
       case "empty":
         if (operation === "getDeliveryEvents") {
-          return { ok: true, source: this.fixture.source.name, data: [] as T };
+          if (data === undefined) {
+            return this.failure(
+              operation,
+              "internal",
+              "empty delivery behavior requires bounded query metadata",
+              false,
+            );
+          }
+          return { ok: true, source: this.fixture.source.name, data };
         }
         return this.failure(
           operation,
@@ -222,6 +253,14 @@ export class FakeConnector implements Connector {
     return operation === "findUserOrMessage"
       ? this.fixture.behavior.getMessageStatus
       : this.fixture.behavior[operation];
+  }
+
+  private defaultDeliveryTimeRange(): { start: string; end: string } {
+    const end = Date.parse(this.fixture.source.observedAt);
+    return {
+      start: new Date(end - 86_400_000).toISOString(),
+      end: new Date(end).toISOString(),
+    };
   }
 
   private failure(
@@ -255,6 +294,18 @@ export class FakeConnector implements Connector {
     const behavior = this.behaviorFor(operation);
     return behavior.kind === "unsupported" ? "unsupported" : "supported";
   }
+}
+
+function isEventWithinRange(
+  event: DeliveryFact,
+  range: { start: string; end: string },
+): boolean {
+  const timestamp = event.attemptedAt ?? event.deliveredAt ?? event.ackedAt;
+  if (!timestamp) return false;
+  const observedAt = Date.parse(timestamp);
+  return (
+    observedAt >= Date.parse(range.start) && observedAt <= Date.parse(range.end)
+  );
 }
 
 export function capabilityStatusFor(

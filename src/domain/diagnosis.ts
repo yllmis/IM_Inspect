@@ -65,12 +65,22 @@ export type DiagnosisToolError = z.infer<typeof DiagnosisToolErrorSchema>;
 export const DeliveryQueryObservationSchema = z
   .object({
     complete: z.boolean(),
+    truncated: z.boolean(),
+    returnedCount: z.number().int().min(0).max(50),
+    effectiveTimeRange: DiagnosisTimeRangeSchema,
     source: z.string().min(1).max(128),
     observedAt: z.string().datetime({ offset: true }),
     evidence: EvidenceSchema,
   })
   .strict()
   .superRefine((observation, context) => {
+    if (observation.complete && observation.truncated) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["complete"],
+        message: "a truncated delivery query cannot be complete",
+      });
+    }
     if (observation.evidence.kind !== "delivery") {
       context.addIssue({
         code: z.ZodIssueCode.custom,

@@ -73,7 +73,10 @@ describe("FakeConnector", () => {
       at: observedAt,
     });
 
-    expect(deliveries).toMatchObject({ ok: true, data: [] });
+    expect(deliveries).toMatchObject({
+      ok: true,
+      data: { events: [], complete: true, truncated: false },
+    });
     expect(connection).toMatchObject({
       ok: false,
       error: { code: "unsupported_capability" },
@@ -103,7 +106,7 @@ describe("FakeConnector", () => {
       messageId: "msg_ack_timeout",
     });
     expect(timeout).toMatchObject({ ok: true });
-    if (timeout.ok) expect(timeout.data[0]?.result).toBe("timeout");
+    if (timeout.ok) expect(timeout.data.events[0]?.result).toBe("timeout");
 
     const deliveredConnector = new FakeConnector("delivered");
     const delivered = await deliveredConnector.getDeliveryEvents({
@@ -111,7 +114,7 @@ describe("FakeConnector", () => {
     });
     expect(delivered).toMatchObject({ ok: true });
     if (delivered.ok) {
-      expect(delivered.data[0]).toMatchObject({
+      expect(delivered.data.events[0]).toMatchObject({
         result: "success",
         deliveredAt: "2026-09-02T09:59:31Z",
       });
@@ -133,6 +136,25 @@ describe("FakeConnector", () => {
       "getDeliveryEvents",
       "getConnectionStatus",
     ]);
+    expect(connector.calls[1]?.input).toMatchObject({ limit: 20 });
+  });
+
+  it("returns a bounded delivery page with an opaque source reference", async () => {
+    const connector = new FakeConnector("delivered");
+    const result = await connector.getDeliveryEvents({
+      messageId: "msg_delivered",
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        complete: true,
+        truncated: false,
+        sourceReference: "fixture:delivered:delivery-events",
+        events: [{ messageId: "msg_delivered" }],
+      },
+    });
   });
 
   it("is deterministic across repeated calls", async () => {

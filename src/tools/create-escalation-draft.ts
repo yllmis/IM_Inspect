@@ -58,6 +58,7 @@ export function createEscalationDraftDefinition(
     name: "create_escalation_draft",
     permission: "escalation:draft:create",
     timeoutMs: 3_000,
+    maxOutputBytes: 128_000,
     readOnly: false,
     inputSchema: CreateEscalationDraftInputSchema,
     async run(args, context) {

@@ -67,6 +67,14 @@ const ConfirmedFactsSummarySchema = z
     deliveryQuery: z
       .object({
         complete: z.boolean(),
+        truncated: z.boolean(),
+        returnedCount: z.number().int().min(0).max(50),
+        effectiveTimeRange: z
+          .object({
+            start: z.string().datetime({ offset: true }),
+            end: z.string().datetime({ offset: true }),
+          })
+          .strict(),
         source: z.string(),
         observedAt: z.string(),
       })
@@ -318,6 +326,9 @@ function summarizeConfirmedFacts(
     deliveryQuery: deliveryQuery
       ? {
           complete: deliveryQuery.complete,
+          truncated: deliveryQuery.truncated,
+          returnedCount: deliveryQuery.returnedCount,
+          effectiveTimeRange: deliveryQuery.effectiveTimeRange,
           source: deliveryQuery.source,
           observedAt: deliveryQuery.observedAt,
         }

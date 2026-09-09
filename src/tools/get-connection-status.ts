@@ -9,13 +9,14 @@ import type { ToolDefinition } from "./registry";
 import {
   parseResult,
   requireCapability,
+  sanitizeConnectionFact,
   unwrapConnector,
 } from "./handler-utils";
 
 export const GetConnectionStatusResultSchema = z
   .object({
     connection: ConnectionFactSchema,
-    unsupportedCapabilities: z.array(z.string()),
+    unsupportedCapabilities: z.array(z.string().min(1).max(128)).max(20),
   })
   .strict();
 
@@ -26,6 +27,7 @@ export function getConnectionStatusDefinition(
     name: "get_connection_status",
     permission: "diagnosis:read_connection",
     timeoutMs: 2_000,
+    maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: ConnectionStatusInputSchema,
     async run(args) {
@@ -36,7 +38,7 @@ export function getConnectionStatusDefinition(
         ),
       );
       return parseResult(GetConnectionStatusResultSchema, {
-        connection,
+        connection: sanitizeConnectionFact(connection),
         unsupportedCapabilities: connection.historical
           ? []
           : ["historicalPresence"],

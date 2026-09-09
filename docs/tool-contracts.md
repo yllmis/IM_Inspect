@@ -102,6 +102,9 @@ submit_incident
 - 查询禁止接受 SQL、Mongo 表达式、正则脚本或自然语言查询语法。
 - 消息正文、手机号、令牌和密码默认不返回；显示名称和摘要按权限脱敏。
 - 响应超过最大返回量时必须设置 `truncated=true`，Agent 应缩小范围或追问，不能假设未返回部分不存在。
+- 数量限制必须传入 Connector 并在数据源查询时执行；Tool 层仍需二次校验，禁止先读取无限结果再仅在模型前裁剪。
+- Trace 按工具白名单生成参数和结果摘要；未分类异常、SQL、堆栈和原始日志不得进入 Tool 响应或 Trace。
+- 原始记录只使用有界、不可执行的 `Evidence.id/source` 或 `sourceReference` 引用，模型不接收数据库行或日志正文。
 
 ## 2. 契约总览
 
@@ -318,12 +321,22 @@ submit_incident
       ]
     }
   ],
+  "query": {
+    "complete": true,
+    "effectiveTimeRange": {
+      "start": "2026-08-28T09:00:00Z",
+      "end": "2026-08-28T10:00:00Z"
+    },
+    "returnedCount": 1,
+    "source": "go_im_connector",
+    "sourceReference": "delivery-query:query_001"
+  },
   "unsupportedCapabilities": [],
   "truncated": false
 }
 ```
 
-`result` 使用 Canonical 枚举：`attempted | success | failed | timeout | unknown`。没有事件查询能力时返回 `unsupported_capability`，不能用空数组伪装“确认没有投递事件”。只有数据源能够证明查询窗口完整时，空数组才可参与 `not_delivered` 判断。
+`result` 使用 Canonical 枚举：`attempted | success | failed | timeout | unknown`。`query.complete` 必须由 Connector 根据真实覆盖范围给出，不能仅通过 `truncated=false` 推断。没有事件查询能力时返回 `unsupported_capability`，不能用空数组伪装“确认没有投递事件”。只有工具成功、`query.complete=true` 且 `truncated=false` 时，空数组才可参与 `not_delivered` 判断。`sourceReference` 是用于审计的不可执行引用，不包含 SQL、数据库记录或日志正文，也不发送给模型。
 
 ### 5.4 错误与运行策略
 

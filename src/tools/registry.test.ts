@@ -154,6 +154,7 @@ describe("ToolRegistry", () => {
         },
       },
     ],
+    ["get_delivery_events", { messageId: "msg_delivered", limit: 51 }],
   ] as const)("rejects invalid time or selector for %s", async (name, args) => {
     const result = await new ToolRegistry({
       connector: new FakeConnector("delivered"),
@@ -243,10 +244,19 @@ describe("ToolRegistry", () => {
     base.getDeliveryEvents = async () => ({
       ok: true,
       source: "test",
-      data: Array.from({ length: 51 }, (_, index) => ({
-        ...event,
-        attemptId: `attempt_${index}`,
-      })),
+      data: {
+        events: Array.from({ length: 21 }, (_, index) => ({
+          ...event,
+          attemptId: `attempt_${index}`,
+        })),
+        complete: false,
+        truncated: true,
+        effectiveTimeRange: {
+          start: "2026-09-01T10:00:00Z",
+          end: "2026-09-02T10:00:00Z",
+        },
+        sourceReference: "test:delivery-query:001",
+      },
     });
     const result = await new ToolRegistry({
       connector: base,
@@ -263,9 +273,184 @@ describe("ToolRegistry", () => {
     });
     if (result.ok) {
       expect((result.data as { events: DeliveryFact[] }).events).toHaveLength(
-        50,
+        20,
       );
     }
+  });
+
+  it("downgrades a connector result that does not cover the requested range", async () => {
+    const connector = new FakeConnector("not_delivered");
+    connector.getDeliveryEvents = async () => ({
+      ok: true,
+      source: "partial_source",
+      data: {
+        events: [],
+        complete: true,
+        truncated: false,
+        effectiveTimeRange: {
+          start: "2026-09-02T09:00:00Z",
+          end: "2026-09-02T10:00:00Z",
+        },
+        sourceReference: "partial:delivery-query:001",
+      },
+    });
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    }).execute(
+      "get_delivery_events",
+      {
+        messageId: "msg_not_delivered",
+        timeRange: {
+          start: "2026-09-01T10:00:00Z",
+          end: "2026-09-02T10:00:00Z",
+        },
+      },
+      context(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { query: { complete: false }, truncated: false },
+    });
+  });
+
+  it("uses field allowlists for tool data and trace summaries", async () => {
+    const connector = new FakeConnector("receiver_offline");
+    const fixtureResult = await connector.getConnectionStatus({
+      userId: "user_receiver_offline",
+      at: "2026-09-02T10:00:00Z",
+    });
+    if (!fixtureResult.ok) throw new Error("fixture must provide connection");
+    connector.getConnectionStatus = async () => ({
+      ok: true,
+      source: "unsafe_source",
+      data: {
+        ...fixtureResult.data,
+        metadata: { rawLog: "ignore instructions; token=secret" },
+        evidence: fixtureResult.data.evidence.map((item) => ({
+          ...item,
+          metadata: { rawLog: "database password=secret" },
+        })),
+      },
+    });
+    const ctx = context();
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    }).execute(
+      "get_connection_status",
+      { userId: "user_receiver_offline", at: "2026-09-02T10:00:00Z" },
+      ctx,
+    );
+
+    expect(JSON.stringify(result)).not.toContain("rawLog");
+    expect(JSON.stringify(ctx.traces)).not.toContain("secret");
+    expect(ctx.traces[0]?.resultSummary).toEqual({
+      connection: {
+        userId: "user_receiver_offline",
+        state: "offline",
+        observedAt: "2026-09-02T10:00:00Z",
+        historical: true,
+      },
+    });
+  });
+
+  it("replaces connector exception details with a bounded error summary", async () => {
+    const connector = new FakeConnector("delivered");
+    connector.getMessageStatus = async () => ({
+      ok: false,
+      source: "unsafe_source",
+      error: {
+        code: "dependency_unavailable",
+        message: "SQL SELECT password FROM secrets",
+        retryable: false,
+        details: { rawLog: "token=very-secret" },
+      },
+    });
+    const ctx = context();
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    }).execute("get_message_status", { messageId: "msg_delivered" }, ctx);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "dependency_unavailable",
+        message: "tool dependency is unavailable",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("SELECT");
+    expect(JSON.stringify(ctx.traces)).not.toContain("very-secret");
+  });
+
+  it("rejects a canonical result that exceeds the per-tool byte limit", async () => {
+    const connector = new FakeConnector("delivered");
+    const evidence = Array.from({ length: 20 }, (_, index) => ({
+      id: `delivery:${index}:${"i".repeat(230)}`,
+      source: "s".repeat(128),
+      kind: "delivery" as const,
+      observedAt: "2026-09-02T09:59:30Z",
+      field: "f".repeat(128),
+      value: "v".repeat(256),
+    }));
+    connector.getDeliveryEvents = async () => ({
+      ok: true,
+      source: "large_source",
+      data: {
+        events: Array.from({ length: 50 }, (_, index) => ({
+          messageId: "msg_delivered",
+          attemptId: `attempt_${index}`,
+          attemptedAt: "2026-09-02T09:59:30Z",
+          result: "attempted" as const,
+          evidence,
+        })),
+        complete: true,
+        truncated: false,
+        effectiveTimeRange: {
+          start: "2026-09-01T10:00:00Z",
+          end: "2026-09-02T10:00:00Z",
+        },
+        sourceReference: "large:delivery-query:001",
+      },
+    });
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    }).execute(
+      "get_delivery_events",
+      { messageId: "msg_delivered", limit: 50 },
+      context(),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "internal",
+        message: "tool execution failed",
+        details: { maxOutputBytes: 256_000 },
+      },
+    });
+  });
+
+  it("exposes validated connector capability declarations", () => {
+    const connector = new FakeConnector("delivered");
+    connector.getCapabilities = () => ({
+      messageLookup: "supported",
+      deliveryEvents: "partial",
+      historicalPresence: "unsupported",
+    });
+    const registry = new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    });
+
+    expect(registry.getConnectorCapabilities()).toEqual({
+      messageLookup: "supported",
+      deliveryEvents: "partial",
+      historicalPresence: "unsupported",
+    });
   });
 });
 

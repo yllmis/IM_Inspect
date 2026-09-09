@@ -4,6 +4,7 @@ import { loadFixture } from "../connectors/fake/fixture-loader";
 import { diagnose } from "../domain/diagnose";
 import { ToolResponse } from "../tools/context";
 import { buildDiagnosisInput } from "./diagnosis-input";
+import { buildModelContext } from "./model-context";
 import {
   AgentSessionState,
   AgentSessionStateSchema,
@@ -197,6 +198,16 @@ describe("mergeToolResult", () => {
       args: { messageId: fixture.message.messageId },
       response: success({
         events: [],
+        query: {
+          complete: true,
+          effectiveTimeRange: {
+            start: "2026-09-06T10:00:00Z",
+            end: "2026-09-07T10:00:00Z",
+          },
+          returnedCount: 0,
+          source: "fake_connector",
+          sourceReference: "fixture:not_delivered:delivery-events",
+        },
         unsupportedCapabilities: [],
         truncated: false,
       }),
@@ -205,11 +216,59 @@ describe("mergeToolResult", () => {
 
     expect(merged.confirmedFacts.deliveryQuery).toMatchObject({
       complete: true,
-      source: "tool:get_delivery_events",
+      truncated: false,
+      returnedCount: 0,
+      source: "fake_connector",
+      evidence: {
+        id: expect.stringMatching(/^delivery-query:/),
+        metadata: {
+          sourceReference: "fixture:not_delivered:delivery-events",
+        },
+      },
     });
     expect(diagnose(buildDiagnosisInput(merged)).classification).toBe(
       "not_delivered",
     );
+    expect(
+      JSON.stringify(buildModelContext(merged, "select_tool")),
+    ).not.toContain("fixture:not_delivered:delivery-events");
+  });
+
+  it("keeps an incomplete empty delivery query as insufficient data", () => {
+    const fixture = loadFixture("not_delivered");
+    const state = AgentSessionStateSchema.parse({
+      ...session(),
+      messageId: fixture.message.messageId,
+      matchResolution: "unique",
+      confirmedFacts: { message: fixture.message },
+      evidence: fixture.message.evidence,
+    });
+    const merged = mergeToolResult(state, {
+      toolName: "get_delivery_events",
+      args: { messageId: fixture.message.messageId },
+      response: success({
+        events: [],
+        query: {
+          complete: false,
+          effectiveTimeRange: {
+            start: "2026-09-07T09:00:00Z",
+            end: "2026-09-07T10:00:00Z",
+          },
+          returnedCount: 0,
+          source: "partial_connector",
+          sourceReference: "partial:delivery-query:001",
+        },
+        unsupportedCapabilities: [],
+        truncated: false,
+      }),
+      calledAt: now,
+    }).state;
+
+    expect(merged.confirmedFacts.deliveryQuery?.complete).toBe(false);
+    expect(diagnose(buildDiagnosisInput(merged))).toMatchObject({
+      classification: "insufficient_data",
+      missingInformation: expect.arrayContaining(["completeDeliveryQuery"]),
+    });
   });
 
   it("uses normalized arguments to create a deterministic input hash", () => {

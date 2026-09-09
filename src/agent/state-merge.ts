@@ -390,11 +390,12 @@ function mergeDeliveryResult(
 
   const queryEvidence: Evidence = {
     id: `delivery-query:${inputHash}`,
-    source: "tool:get_delivery_events",
+    source: result.query.source,
     kind: "delivery",
     observedAt: calledAt,
     field: "query_complete",
-    value: !result.truncated,
+    value: result.query.complete,
+    metadata: { sourceReference: result.query.sourceReference },
   };
   const deliveries = mergeDeliveries(
     state.confirmedFacts.deliveries,
@@ -406,7 +407,10 @@ function mergeDeliveryResult(
       ...state.confirmedFacts,
       deliveries,
       deliveryQuery: {
-        complete: !result.truncated,
+        complete: result.query.complete,
+        truncated: result.truncated,
+        returnedCount: result.query.returnedCount,
+        effectiveTimeRange: result.query.effectiveTimeRange,
         source: queryEvidence.source,
         observedAt: calledAt,
         evidence: queryEvidence,

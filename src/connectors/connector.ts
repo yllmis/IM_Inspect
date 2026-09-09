@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { ConnectionFact, ConnectionFactSchema } from "../domain/connection";
-import { DeliveryFact, DeliveryFactSchema } from "../domain/delivery";
+import { DeliveryFactSchema } from "../domain/delivery";
 import {
   ConnectorCapabilities,
   ConnectorCapabilitiesSchema,
@@ -23,6 +23,29 @@ export const IdentifierSchema = z
         return code >= 0x20 && code !== 0x7f;
       }),
     { message: "identifier cannot contain control characters" },
+  );
+
+export const SourceReferenceSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9:._/-]*$/, {
+    message: "source reference must be an opaque identifier",
+  });
+
+export const DeliveryTimeRangeSchema = z
+  .object({
+    start: z.string().datetime({ offset: true }),
+    end: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .refine(({ start, end }) => Date.parse(start) < Date.parse(end), {
+    message: "start must be before end",
+    path: ["end"],
+  })
+  .refine(
+    ({ start, end }) => Date.parse(end) - Date.parse(start) <= 86_400_000,
+    { message: "timeRange cannot exceed 24 hours", path: ["end"] },
   );
 
 export const FindUserOrMessageInputSchema = z
@@ -67,7 +90,7 @@ export const FindMatchSchema = z
     conversationId: z.string().min(1).max(128).optional(),
     messageId: z.string().min(1).max(128).optional(),
     observedAt: z.string().datetime({ offset: true }),
-    evidence: z.array(EvidenceSchema),
+    evidence: z.array(EvidenceSchema).max(20),
   })
   .strict();
 export type FindMatch = z.infer<typeof FindMatchSchema>;
@@ -80,7 +103,7 @@ export const FindUserOrMessageResultSchema = z
       "none",
       "insufficient_data",
     ]),
-    matches: z.array(FindMatchSchema).max(1000),
+    matches: z.array(FindMatchSchema).max(20),
     truncated: z.boolean(),
   })
   .strict();
@@ -96,24 +119,31 @@ export type MessageLookupInput = z.infer<typeof MessageLookupInputSchema>;
 export const DeliveryEventsInputSchema = z
   .object({
     messageId: IdentifierSchema,
-    timeRange: z
-      .object({
-        start: z.string().datetime({ offset: true }),
-        end: z.string().datetime({ offset: true }),
-      })
-      .strict()
-      .refine(({ start, end }) => Date.parse(start) < Date.parse(end), {
-        message: "start must be before end",
-        path: ["end"],
-      })
-      .refine(
-        ({ start, end }) => Date.parse(end) - Date.parse(start) <= 86_400_000,
-        { message: "timeRange cannot exceed 24 hours", path: ["end"] },
-      )
-      .optional(),
+    timeRange: DeliveryTimeRangeSchema.optional(),
+    limit: z.number().int().min(1).max(50).default(20),
   })
   .strict();
-export type DeliveryEventsInput = z.infer<typeof DeliveryEventsInputSchema>;
+export type DeliveryEventsInput = z.input<typeof DeliveryEventsInputSchema>;
+
+export const DeliveryEventsPageSchema = z
+  .object({
+    events: z.array(DeliveryFactSchema).max(50),
+    complete: z.boolean(),
+    truncated: z.boolean(),
+    effectiveTimeRange: DeliveryTimeRangeSchema,
+    sourceReference: SourceReferenceSchema,
+  })
+  .strict()
+  .superRefine((page, context) => {
+    if (page.complete && page.truncated) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["complete"],
+        message: "a truncated delivery query cannot be complete",
+      });
+    }
+  });
+export type DeliveryEventsPage = z.infer<typeof DeliveryEventsPageSchema>;
 
 export const ConnectionStatusInputSchema = z
   .object({
@@ -153,7 +183,7 @@ export interface Connector {
   ): Promise<ConnectorResult<MessageFact>>;
   getDeliveryEvents(
     input: DeliveryEventsInput,
-  ): Promise<ConnectorResult<DeliveryFact[]>>;
+  ): Promise<ConnectorResult<DeliveryEventsPage>>;
   getConnectionStatus(
     input: ConnectionStatusInput,
   ): Promise<ConnectorResult<ConnectionFact>>;

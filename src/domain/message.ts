@@ -29,8 +29,11 @@ export const MessageFactSchema = z
     persisted: z.boolean().nullable(),
     createdAt: optionalTimestamp.optional(),
     statusAt: optionalTimestamp.optional(),
-    evidence: z.array(EvidenceSchema),
-    metadata: z.record(z.string()).optional(),
+    evidence: z.array(EvidenceSchema).max(20),
+    metadata: z
+      .record(z.string().max(256))
+      .refine((value) => Object.keys(value).length <= 10)
+      .optional(),
   })
   .strict()
   .superRefine((message, context) => {

@@ -6,13 +6,14 @@ import type { ToolDefinition } from "./registry";
 import {
   parseResult,
   requireCapability,
+  sanitizeMessageFact,
   unwrapConnector,
 } from "./handler-utils";
 
 export const GetMessageStatusResultSchema = z
   .object({
     message: MessageFactSchema,
-    unsupportedCapabilities: z.array(z.string()),
+    unsupportedCapabilities: z.array(z.string().min(1).max(128)).max(20),
   })
   .strict();
 
@@ -23,6 +24,7 @@ export function getMessageStatusDefinition(
     name: "get_message_status",
     permission: "diagnosis:read",
     timeoutMs: 2_000,
+    maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: MessageLookupInputSchema,
     async run(args) {
@@ -31,7 +33,7 @@ export function getMessageStatusDefinition(
         await connector.getMessageStatus(MessageLookupInputSchema.parse(args)),
       );
       return parseResult(GetMessageStatusResultSchema, {
-        message,
+        message: sanitizeMessageFact(message),
         unsupportedCapabilities: [],
       });
     },

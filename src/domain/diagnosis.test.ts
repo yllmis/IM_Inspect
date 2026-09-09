@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../connectors/fake/fixture-loader";
 import { diagnose } from "./diagnose";
-import { DiagnosisInput } from "./diagnosis";
+import { DeliveryQueryObservation, DiagnosisInput } from "./diagnosis";
 import { DeliveryFact } from "./delivery";
 import { Evidence } from "./evidence";
 
@@ -15,6 +15,19 @@ const deliveryQueryEvidence: Evidence = {
   observedAt,
   field: "delivery_events_query",
   value: "complete_empty_result",
+};
+
+const completeDeliveryQuery: DeliveryQueryObservation = {
+  complete: true,
+  truncated: false,
+  returnedCount: 0,
+  effectiveTimeRange: {
+    start: "2026-09-01T10:00:00Z",
+    end: observedAt,
+  },
+  source: "fake_connector",
+  observedAt,
+  evidence: deliveryQueryEvidence,
 };
 
 function fixtureInput(fixtureName: string): DiagnosisInput {
@@ -51,12 +64,7 @@ describe("diagnose deterministic classifications", () => {
 
     const complete = diagnose({
       ...input,
-      deliveryQuery: {
-        complete: true,
-        source: "fake_connector",
-        observedAt,
-        evidence: deliveryQueryEvidence,
-      },
+      deliveryQuery: completeDeliveryQuery,
     });
     expect(complete.classification).toBe("not_delivered");
     expect(complete.evidence).toContainEqual(deliveryQueryEvidence);
@@ -317,12 +325,7 @@ describe("diagnose rule coverage matrix", () => {
       name: "not_delivered",
       input: {
         ...fixtureInput("not_delivered"),
-        deliveryQuery: {
-          complete: true,
-          source: "fake_connector",
-          observedAt,
-          evidence: deliveryQueryEvidence,
-        },
+        deliveryQuery: completeDeliveryQuery,
       },
       expected: "not_delivered",
     },

@@ -92,6 +92,10 @@ export async function runAgent(
     actorId: input.toolContext.actorId,
   };
   let state = await loadOrCreateState(input, identity, now());
+  state = AgentSessionStateSchema.parse({
+    ...state,
+    connectorCapabilities: input.registry.getConnectorCapabilities(),
+  });
   const expectedVersion = state.version;
   const calls: AgentToolCall[] = [];
   const cache = new Map<string, ToolResponse<unknown>>();

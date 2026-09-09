@@ -12,8 +12,11 @@ export const ConnectionFactSchema = z
     observedAt: z.string().datetime({ offset: true }).optional(),
     connectionId: z.string().min(1).max(128).optional(),
     historical: z.boolean(),
-    evidence: z.array(EvidenceSchema),
-    metadata: z.record(z.string()).optional(),
+    evidence: z.array(EvidenceSchema).max(20),
+    metadata: z
+      .record(z.string().max(256))
+      .refine((value) => Object.keys(value).length <= 10)
+      .optional(),
   })
   .strict()
   .superRefine((connection, context) => {
