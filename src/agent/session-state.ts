@@ -153,6 +153,26 @@ export type PreviousIssueReference = z.infer<
   typeof PreviousIssueReferenceSchema
 >;
 
+export const ConversationEntrySchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string().trim().min(1).max(2_000),
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ConversationEntry = z.infer<typeof ConversationEntrySchema>;
+
+export const ConversationHistorySummarySchema = z
+  .object({
+    text: z.string().trim().min(1).max(2_000),
+    summarizedMessages: z.number().int().positive(),
+    updatedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ConversationHistorySummary = z.infer<
+  typeof ConversationHistorySummarySchema
+>;
+
 const confirmationBinding = {
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   idempotencyKey: z.string().trim().min(16).max(128),
@@ -184,6 +204,8 @@ export const AgentSessionStateSchema = z
     actorId: IdentifierSchema,
     currentIssue: CurrentIssueSchema,
     previousIssues: z.array(PreviousIssueReferenceSchema).max(10).default([]),
+    recentConversation: z.array(ConversationEntrySchema).max(6).default([]),
+    historySummary: ConversationHistorySummarySchema.nullable().default(null),
     candidateContext: SessionCandidateContextSchema,
     // 顶层 ID 只保存已经唯一定位的对象，不能直接复制模型候选值。
     userId: IdentifierSchema.nullable().default(null),

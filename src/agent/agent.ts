@@ -17,9 +17,22 @@ import { DiagnosisResult } from "../domain/diagnosis";
 import { createToolContext, ToolContext, ToolResponse } from "../tools/context";
 import { ToolRegistry } from "../tools/registry";
 import { buildDiagnosisInput } from "./diagnosis-input";
-import { CandidateContext, extractCandidateContext } from "./extract-context";
+import {
+  CandidateContext,
+  CONTEXT_EXTRACTION_PROMPT,
+  extractCandidateContext,
+} from "./extract-context";
 import { buildModelContext } from "./model-context";
 import { fallbackReply, GeneratedAgentReplySchema } from "./response";
+import { recordConversationExchange } from "./conversation-memory";
+import {
+  assertModelRequestFits,
+  ContextBudget,
+  ContextBudgetExceededError,
+  resolveContextBudget,
+  RunTokenBudget,
+  RunTokenUsage,
+} from "./context-budget";
 import {
   AgentSessionState,
   AgentSessionStateSchema,
@@ -61,6 +74,7 @@ export interface AgentInput {
   registry: ToolRegistry;
   stateStore: StateStore;
   targetSwitchDecision?: TargetSwitchDecision;
+  contextBudget?: Partial<ContextBudget>;
   maxSteps?: number;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -84,6 +98,7 @@ export interface AgentExecutionResult {
   steps: number;
   stopReason?: string;
   modelText: string;
+  tokenUsage: RunTokenUsage;
   pendingAction?: {
     type: "switch_diagnosis_target";
     decisionId: string;
@@ -97,6 +112,8 @@ export async function runAgent(
   input: AgentInput,
 ): Promise<AgentExecutionResult> {
   const now = input.now ?? (() => new Date());
+  const contextBudget = resolveContextBudget(input.contextBudget);
+  const runTokenBudget = new RunTokenBudget(contextBudget.maxTotalTokens);
   const identity: SessionStateIdentity = {
     sessionId: input.sessionId,
     tenantId: input.toolContext.tenantId,
@@ -118,15 +135,23 @@ export async function runAgent(
     state = expiredSwitch.state;
     const diagnosis = refreshDiagnosis(state, input);
     state = diagnosis.state;
+    const reply = state.pendingQuestion!.question;
+    state = recordConversationExchange(state, {
+      userText: input.text,
+      assistantText: reply,
+      now: now(),
+      budget: contextBudget,
+    });
     const saved = await input.stateStore.save(state, expectedVersion);
     return executionResult({
       state: saved,
       diagnosis: diagnosis.result,
-      reply: saved.pendingQuestion!.question,
+      reply,
       modelText: "",
       calls,
       steps: 0,
       stopReason: "ask_for_information",
+      tokenUsage: runTokenBudget.snapshot(),
     });
   }
 
@@ -141,6 +166,7 @@ export async function runAgent(
       calls,
       steps: 0,
       stopReason: "ask_for_information",
+      tokenUsage: runTokenBudget.snapshot(),
     });
   }
 
@@ -148,11 +174,22 @@ export async function runAgent(
     state = resolveTargetSwitch(state, input.targetSwitchDecision, now()).state;
   } else {
     state = withStatus(state, "extracting_context");
+    runTokenBudget.assertCanReserve(contextBudget.maxOutputTokens);
+    const extractionContext = buildModelContext(state, "extract_context", {
+      currentUserText: input.text,
+      budget: contextBudget,
+    });
     const extracted = await extractCandidateContext({
       model: input.model,
-      modelContext: buildModelContext(state, "extract_context", {
-        currentUserText: input.text,
-      }),
+      modelContext: extractionContext,
+      budget: contextBudget,
+      maxOutputTokens: contextBudget.maxOutputTokens,
+      onUsage: (usage) =>
+        runTokenBudget.record(
+          usage,
+          CONTEXT_EXTRACTION_PROMPT.length +
+            JSON.stringify(extractionContext).length,
+        ),
     });
     const candidatePatch = nonNullCandidatePatch(extracted);
     if (candidatePatch) {
@@ -165,15 +202,23 @@ export async function runAgent(
 
   if (state.pendingQuestion) {
     state = withStatus(state, "awaiting_information");
+    const reply = state.pendingQuestion!.question;
+    state = recordConversationExchange(state, {
+      userText: input.text,
+      assistantText: reply,
+      now: now(),
+      budget: contextBudget,
+    });
     const saved = await input.stateStore.save(state, expectedVersion);
     return executionResult({
       state: saved,
       diagnosis: diagnosis.result,
-      reply: saved.pendingQuestion!.question,
+      reply,
       modelText: "",
       calls,
       steps: 0,
       stopReason: "ask_for_information",
+      tokenUsage: runTokenBudget.snapshot(),
     });
   }
 
@@ -194,7 +239,7 @@ export async function runAgent(
       }).state;
       diagnosis = refreshDiagnosis(state, input);
       state = diagnosis.state;
-      return modelToolResult(state, cached);
+      return modelToolResult(state, cached, contextBudget);
     }
 
     state = withStatus(state, "calling_tool");
@@ -215,23 +260,68 @@ export async function runAgent(
     diagnosis = refreshDiagnosis(state, input);
     state = diagnosis.state;
     lastToolFailed = !response.ok;
-    return modelToolResult(state, response);
+    return modelToolResult(state, response, contextBudget);
   };
 
-  const maximumSteps = input.maxSteps ?? 8;
+  const requestedMaxSteps = input.maxSteps ?? contextBudget.maxAgentSteps;
+  if (!Number.isSafeInteger(requestedMaxSteps) || requestedMaxSteps <= 0) {
+    throw new Error("maxSteps must be a positive safe integer");
+  }
+  const maximumSteps = Math.min(requestedMaxSteps, contextBudget.maxAgentSteps);
+  if (runTokenBudget.stopIfCannotReserve(contextBudget.maxOutputTokens)) {
+    const reply = `${fallbackReply(diagnosis.result)} 本次诊断已达到模型 Token 预算，未继续调用模型。`;
+    state = AgentSessionStateSchema.parse({
+      ...withStatus(state, "stopped"),
+      pendingQuestion: null,
+    });
+    state = recordConversationExchange(state, {
+      userText: input.text,
+      assistantText: reply,
+      now: now(),
+      budget: contextBudget,
+    });
+    const saved = await input.stateStore.save(state, expectedVersion);
+    return executionResult({
+      state: saved,
+      diagnosis: diagnosis.result,
+      reply,
+      modelText: "",
+      calls,
+      steps: 0,
+      stopReason: "max_tokens",
+      tokenUsage: runTokenBudget.snapshot(),
+    });
+  }
+  const selectionContext = buildModelContext(state, "select_tool", {
+    budget: contextBudget,
+  });
+  const selectionPrompt = JSON.stringify(selectionContext);
+  assertModelRequestFits({
+    system: SYSTEM_PROMPT,
+    prompt: selectionPrompt,
+    budget: contextBudget,
+    includesTools: true,
+  });
   const selection = await generateText({
     model: input.model,
     system: SYSTEM_PROMPT,
-    prompt: JSON.stringify(buildModelContext(state, "select_tool")),
+    prompt: selectionPrompt,
     tools: diagnosticTools(execute),
     stopWhen: [
       stepCountIs(maximumSteps),
       () => repeatedCall,
       () => lastToolFailed,
+      () => runTokenBudget.stopIfCannotReserve(contextBudget.maxOutputTokens),
       () =>
         state.diagnosisResult !== null &&
         state.diagnosisResult.classification !== "insufficient_data",
     ],
+    maxOutputTokens: contextBudget.maxOutputTokens,
+    onStepFinish: ({ usage }) =>
+      runTokenBudget.record(
+        usage,
+        SYSTEM_PROMPT.length + selectionPrompt.length,
+      ),
     maxRetries: 0,
   });
 
@@ -247,34 +337,64 @@ export async function runAgent(
     diagnosis: diagnosis.result,
     repeatedCall,
     toolError: lastToolFailed,
+    tokenBudgetExceeded: runTokenBudget.isExceeded(),
   });
 
-  const responseContext = buildModelContext(state, "generate_response");
+  const responseContext = buildModelContext(state, "generate_response", {
+    budget: contextBudget,
+  });
   let modelText = "";
   try {
+    runTokenBudget.assertCanReserve(contextBudget.maxOutputTokens);
+    const responsePrompt = JSON.stringify(responseContext);
+    assertModelRequestFits({
+      system: RESPONSE_PROMPT,
+      prompt: responsePrompt,
+      budget: contextBudget,
+    });
     const generated = await generateText({
       model: input.model,
       system: RESPONSE_PROMPT,
-      prompt: JSON.stringify(responseContext),
+      prompt: responsePrompt,
       output: Output.object({ schema: GeneratedAgentReplySchema }),
+      maxOutputTokens: contextBudget.maxOutputTokens,
       maxRetries: 0,
     });
+    runTokenBudget.record(
+      generated.usage,
+      RESPONSE_PROMPT.length + responsePrompt.length,
+    );
     const candidate = GeneratedAgentReplySchema.parse(generated.output);
     if (candidate.classification === diagnosis.result.classification) {
       modelText = candidate.reply;
     }
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof ContextBudgetExceededError &&
+      error.code !== "max_total_tokens"
+    ) {
+      throw error;
+    }
     // 回复生成失败不改变已经确认的事实和诊断，使用确定性模板兜底。
   }
 
   const reply = modelText || fallbackReply(diagnosis.result);
-  const finalStatus = executionStatus(diagnosis.result, stop.reason);
+  const finalStopReason = runTokenBudget.isExceeded()
+    ? "max_tokens"
+    : stop.reason;
+  const finalStatus = executionStatus(diagnosis.result, finalStopReason);
   state = withStatus(state, finalStatus);
   if (finalStatus === "awaiting_information") {
     state = withPendingQuestion(state, diagnosis.result, now());
   } else {
     state = AgentSessionStateSchema.parse({ ...state, pendingQuestion: null });
   }
+  state = recordConversationExchange(state, {
+    userText: input.text,
+    assistantText: reply,
+    now: now(),
+    budget: contextBudget,
+  });
   const saved = await input.stateStore.save(state, expectedVersion);
 
   return executionResult({
@@ -284,7 +404,8 @@ export async function runAgent(
     modelText,
     calls,
     steps: selection.steps.length,
-    stopReason: stop.reason,
+    stopReason: finalStopReason,
+    tokenUsage: runTokenBudget.snapshot(),
   });
 }
 
@@ -367,6 +488,7 @@ function nonNullCandidatePatch(
 function modelToolResult(
   state: AgentSessionState,
   response: ToolResponse<unknown>,
+  budget: ContextBudget,
 ): unknown {
   if (!response.ok) {
     return {
@@ -378,10 +500,17 @@ function modelToolResult(
     };
   }
   // 不把原始工具结果和证据 metadata 无限追加给模型，只返回受限工作摘要。
-  return {
+  const result = {
     ok: true,
-    context: buildModelContext(state, "select_tool"),
+    context: buildModelContext(state, "select_tool", { budget }),
   };
+  if (JSON.stringify(result).length > budget.maxToolResultCharacters) {
+    throw new ContextBudgetExceededError(
+      "tool_result_too_large",
+      "tool result summary exceeds the configured model budget",
+    );
+  }
+  return result;
 }
 
 function executionStatus(
@@ -431,6 +560,7 @@ function executionResult(input: {
   calls: AgentToolCall[];
   steps: number;
   stopReason?: string;
+  tokenUsage: RunTokenUsage;
 }): AgentExecutionResult {
   return {
     sessionId: input.state.sessionId,
@@ -450,6 +580,7 @@ function executionResult(input: {
     steps: input.steps,
     stopReason: input.stopReason,
     modelText: input.modelText,
+    tokenUsage: input.tokenUsage,
     pendingAction: input.state.pendingTargetSwitch
       ? {
           type: "switch_diagnosis_target",

@@ -25,11 +25,27 @@ const usage = {
   },
 };
 
-function textResult(text: string) {
+function usageWith(inputTokens: number, outputTokens: number) {
+  return {
+    inputTokens: {
+      total: inputTokens,
+      noCache: inputTokens,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    outputTokens: {
+      total: outputTokens,
+      text: outputTokens,
+      reasoning: 0,
+    },
+  };
+}
+
+function textResult(text: string, resultUsage = usage) {
   return {
     content: [{ type: "text" as const, text }],
     finishReason: { unified: "stop" as const, raw: undefined },
-    usage,
+    usage: resultUsage,
     warnings: [],
   };
 }
@@ -339,7 +355,14 @@ describe("runAgent stateful loop", () => {
       confirmedFacts: { message: null },
       previousIssues: [{ messageId: "msg_delivered" }],
       pendingTargetSwitch: null,
+      historySummary: null,
     });
+    expect(saved?.recentConversation.map((entry) => entry.content)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("先检查")]),
+    );
+    expect(saved?.recentConversation.map((entry) => entry.content)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("再检查")]),
+    );
   });
 
   it("records a timeout as a tool error without creating a message fact", async () => {
@@ -454,5 +477,88 @@ describe("runAgent stateful loop", () => {
       "success",
       "cached",
     ]);
+  });
+
+  it("stops before another model call when the run cannot reserve output tokens", async () => {
+    const runtime = testRuntime();
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        textResult(
+          JSON.stringify({
+            messageId: "msg_delivered",
+            userId: null,
+            conversationId: null,
+            timeRange: null,
+            problemType: "message_not_received",
+          }),
+          usageWith(800, 100),
+        ),
+      ],
+    });
+
+    const result = await runAgent({
+      sessionId: "session_token_budget",
+      text: "查询 msg_delivered",
+      model,
+      toolContext: runtime.context("run_token_budget"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+      contextBudget: {
+        maxTotalTokens: 1_000,
+        maxOutputTokens: 200,
+      },
+    });
+
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(result).toMatchObject({
+      status: "stopped",
+      stopReason: "max_tokens",
+      tokenUsage: {
+        inputTokens: 800,
+        outputTokens: 100,
+        totalTokens: 900,
+        estimated: false,
+      },
+    });
+    expect(result.reply).toContain("达到模型 Token 预算");
+
+    const saved = await runtime.store.load({
+      sessionId: "session_token_budget",
+      tenantId: "tenant_test",
+      actorId: "support_test",
+    });
+    expect(saved?.status).toBe("stopped");
+    expect(saved?.recentConversation).toHaveLength(2);
+    expect(saved?.confirmedFacts.message).toBeNull();
+  });
+
+  it("caps a caller-provided step count at the configured Agent budget", async () => {
+    const runtime = testRuntime();
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        extraction("msg_delivered"),
+        textResult("没有调用工具"),
+        responseResult("insufficient_data", "没有获得足够证据，暂时无法判断。"),
+      ],
+    });
+
+    const result = await runAgent({
+      sessionId: "session_step_budget",
+      text: "查询 msg_delivered",
+      model,
+      toolContext: runtime.context("run_step_budget"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+      maxSteps: 99,
+      contextBudget: { maxAgentSteps: 1 },
+    });
+
+    expect(result).toMatchObject({
+      status: "stopped",
+      steps: 1,
+      stopReason: "max_steps",
+    });
   });
 });

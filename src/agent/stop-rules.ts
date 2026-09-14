@@ -4,6 +4,7 @@ export type AgentStopReason =
   | "diagnosed"
   | "ask_for_information"
   | "max_steps"
+  | "max_tokens"
   | "max_calls"
   | "deadline"
   | "tool_error"
@@ -19,6 +20,7 @@ export interface StopRuleInput {
   diagnosis?: DiagnosisResult;
   repeatedCall?: boolean;
   toolError?: boolean;
+  tokenBudgetExceeded?: boolean;
 }
 
 export interface StopDecision {
@@ -28,6 +30,7 @@ export interface StopDecision {
 
 export function evaluateStopRules(input: StopRuleInput): StopDecision {
   if (input.steps >= input.maxSteps) return { stop: true, reason: "max_steps" };
+  if (input.tokenBudgetExceeded) return { stop: true, reason: "max_tokens" };
   if (input.callsUsed >= input.maxCalls)
     return { stop: true, reason: "max_calls" };
   if ((input.now ?? Date.now()) >= input.deadline)

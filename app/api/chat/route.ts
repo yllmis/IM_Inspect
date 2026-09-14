@@ -3,6 +3,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 
 import { runAgent } from "../../../src/agent/agent";
+import { ContextBudgetExceededError } from "../../../src/agent/context-budget";
 import { TargetSwitchDecisionSchema } from "../../../src/agent/session-state";
 import { TargetSwitchResolutionError } from "../../../src/agent/state-merge";
 import { StateStoreError } from "../../../src/agent/state-store";
@@ -95,6 +96,12 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: `target_switch_${error.code}` },
         { status: 409 },
+      );
+    }
+    if (error instanceof ContextBudgetExceededError) {
+      return NextResponse.json(
+        { error: "context_budget_exceeded", reason: error.code },
+        { status: error.code === "max_total_tokens" ? 429 : 413 },
       );
     }
     return NextResponse.json(

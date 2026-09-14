@@ -1,8 +1,13 @@
-import { generateText, LanguageModel, Output } from "ai";
+import { generateText, LanguageModel, LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
 
 import { IdentifierSchema } from "../connectors/connector";
 import { DiagnosisTimeRangeSchema } from "../domain/diagnosis";
+import {
+  assertModelRequestFits,
+  ContextBudget,
+  resolveContextBudget,
+} from "./context-budget";
 
 export const CandidateContextSchema = z
   .object({
@@ -17,7 +22,7 @@ export type CandidateContext = z.infer<typeof CandidateContextSchema>;
 
 export const ContextExtractionSchema = CandidateContextSchema;
 
-const CONTEXT_EXTRACTION_PROMPT = `你负责从当前客服输入中提取诊断线索。
+export const CONTEXT_EXTRACTION_PROMPT = `你负责从当前客服输入中提取诊断线索。
 
 要求：
 1. 输出必须符合给定 Schema，不要输出解释。
@@ -37,13 +42,25 @@ export function emptyCandidateContext(): CandidateContext {
 export async function extractCandidateContext(input: {
   model: LanguageModel;
   modelContext: unknown;
+  maxOutputTokens?: number;
+  onUsage?: (usage: LanguageModelUsage) => void;
+  budget?: Partial<ContextBudget>;
 }): Promise<CandidateContext> {
+  const budget = resolveContextBudget(input.budget);
+  const prompt = JSON.stringify(input.modelContext);
+  assertModelRequestFits({
+    system: CONTEXT_EXTRACTION_PROMPT,
+    prompt,
+    budget,
+  });
   const result = await generateText({
     model: input.model,
     system: CONTEXT_EXTRACTION_PROMPT,
-    prompt: JSON.stringify(input.modelContext),
+    prompt,
     output: Output.object({ schema: ContextExtractionSchema }),
+    maxOutputTokens: input.maxOutputTokens,
     maxRetries: 0,
   });
+  input.onUsage?.(result.usage);
   return parseCandidateContext(result.output);
 }

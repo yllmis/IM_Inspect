@@ -99,14 +99,15 @@ describe("buildModelContext", () => {
       })),
     });
     const context = buildModelContext(state, "select_tool", {
-      limits: { maxCalledTools: 2 },
+      budget: { maxToolSummariesCharacters: 300 },
     });
 
-    expect(context.recentTools).toHaveLength(2);
-    expect(context.truncation).toMatchObject({
-      truncated: true,
-      omitted: { recentTools: 3 },
+    expect(context.recentTools!.length).toBeLessThan(5);
+    expect(context.modelContextStatus).toMatchObject({
+      contextIncomplete: true,
+      omittedSections: expect.arrayContaining(["toolSummaries"]),
     });
+    expect(context.modelContextStatus.omitted.recentTools).toBeGreaterThan(0);
     expect(context.confirmedFacts?.message).toMatchObject({
       messageId: "msg_delivered",
       exists: true,
@@ -132,6 +133,83 @@ describe("buildModelContext", () => {
     expect(context).not.toHaveProperty("recentTools");
   });
 
+  it("only sends confirmed facts related to the active diagnosis target", () => {
+    const base = session();
+    const delivery = base.confirmedFacts.deliveries[0]!;
+    const state = AgentSessionStateSchema.parse({
+      ...base,
+      confirmedFacts: {
+        ...base.confirmedFacts,
+        deliveries: [
+          delivery,
+          {
+            ...delivery,
+            messageId: "msg_unrelated",
+            attemptId: "attempt_unrelated",
+          },
+        ],
+        connection: {
+          userId: "user_unrelated",
+          state: "offline",
+          historical: false,
+          evidence: [],
+        },
+      },
+    });
+
+    const context = buildModelContext(state, "select_tool");
+
+    expect(context.confirmedFacts?.deliveries).toHaveLength(1);
+    expect(context.confirmedFacts?.deliveries[0]?.messageId).toBe(
+      "msg_delivered",
+    );
+    expect(context.confirmedFacts?.connection).toBeNull();
+    expect(context.modelContextStatus).toMatchObject({
+      contextIncomplete: true,
+      omittedSections: expect.arrayContaining(["confirmedFacts"]),
+      omitted: {
+        unrelatedDeliveryFacts: 1,
+        unrelatedConnectionFacts: 1,
+      },
+    });
+  });
+
+  it("includes bounded current-issue dialogue only for extraction and tool selection", () => {
+    const state = AgentSessionStateSchema.parse({
+      ...session(),
+      recentConversation: [
+        {
+          role: "user",
+          content: "上一轮问题",
+          createdAt: "2026-09-06T10:00:03Z",
+        },
+        {
+          role: "assistant",
+          content: "上一轮回答",
+          createdAt: "2026-09-06T10:00:04Z",
+        },
+      ],
+      historySummary: {
+        text: "更早的本次诊断内容",
+        summarizedMessages: 2,
+        updatedAt: "2026-09-06T10:00:05Z",
+      },
+    });
+
+    const extraction = buildModelContext(state, "extract_context", {
+      currentUserText: "本轮问题",
+    });
+    const selection = buildModelContext(state, "select_tool");
+    const response = buildModelContext(state, "generate_response");
+
+    expect(extraction.recentConversation).toHaveLength(2);
+    expect(extraction.historySummary?.text).toBe("更早的本次诊断内容");
+    expect(selection.recentConversation).toHaveLength(2);
+    expect(selection.historySummary?.text).toBe("更早的本次诊断内容");
+    expect(response).not.toHaveProperty("recentConversation");
+    expect(response).not.toHaveProperty("historySummary");
+  });
+
   it("enforces a total character budget and reports omitted content", () => {
     const oversized = AgentSessionStateSchema.parse({
       ...session(),
@@ -149,16 +227,22 @@ describe("buildModelContext", () => {
       })),
     });
     const context = buildModelContext(oversized, "select_tool", {
-      limits: {
-        maxCharacters: 1_200,
-        maxIssueSummaryCharacters: 1_000,
-        maxEvidenceRefs: 80,
+      budget: {
+        maxInputCharacters: 7_000,
+        safetyMarginCharacters: 500,
+        maxSystemInstructionCharacters: 4_800,
+        toolDefinitionsReserveCharacters: 500,
       },
     });
 
     expect(JSON.stringify(context).length).toBeLessThanOrEqual(1_200);
-    expect(context.truncation.truncated).toBe(true);
-    expect(Object.keys(context.truncation.omitted).length).toBeGreaterThan(0);
+    expect(context.modelContextStatus.usedCharacters).toBe(
+      JSON.stringify(context).length,
+    );
+    expect(context.modelContextStatus.contextIncomplete).toBe(true);
+    expect(
+      Object.keys(context.modelContextStatus.omitted).length,
+    ).toBeGreaterThan(0);
     expect(JSON.stringify(context)).not.toContain("sensitive-");
   });
 });

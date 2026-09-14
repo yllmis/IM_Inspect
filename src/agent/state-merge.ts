@@ -265,6 +265,8 @@ export function resolveTargetSwitch(
       summary: `检查消息 ${pending.toMessageId}`,
     },
     previousIssues,
+    recentConversation: [],
+    historySummary: null,
     candidateContext: { messageId: pending.toMessageId },
     userId: null,
     conversationId: null,

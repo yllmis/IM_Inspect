@@ -3,10 +3,17 @@ import { z } from "zod";
 import {
   AgentSessionState,
   CalledToolSummarySchema,
+  ConversationEntrySchema,
+  ConversationHistorySummarySchema,
   CurrentIssueSchema,
   PendingQuestionSchema,
   SessionCandidateContextSchema,
 } from "./session-state";
+import {
+  ContextBudget,
+  modelContextCharacterBudget,
+  resolveContextBudget,
+} from "./context-budget";
 import {
   DiagnosisClassificationSchema,
   RecommendedActionSchema,
@@ -124,6 +131,8 @@ export const ModelContextSchema = z
     sessionId: z.string(),
     currentIssue: CurrentIssueSchema,
     currentUserText: z.string().min(1).optional(),
+    recentConversation: z.array(ConversationEntrySchema).optional(),
+    historySummary: ConversationHistorySummarySchema.optional(),
     candidateContext: SessionCandidateContextSchema.optional(),
     confirmedFacts: ConfirmedFactsSummarySchema.optional(),
     evidenceRefs: z.array(z.string()).optional(),
@@ -136,53 +145,43 @@ export const ModelContextSchema = z
     toolErrors: z.array(ToolErrorSummarySchema).optional(),
     pendingQuestion: PendingQuestionSchema.optional(),
     diagnosis: DiagnosisSummarySchema.optional(),
-    truncation: z
+    modelContextStatus: z
       .object({
-        truncated: z.boolean(),
+        contextIncomplete: z.boolean(),
+        criticalInformationOmitted: z.boolean(),
+        omittedSections: z.array(z.string().min(1).max(64)).max(20),
         omitted: z.record(z.number().int().nonnegative()),
+        usedCharacters: z.number().int().nonnegative(),
+        maxCharacters: z.number().int().positive(),
       })
       .strict(),
   })
   .strict();
 export type ModelContext = z.infer<typeof ModelContextSchema>;
 
-export interface ModelContextLimits {
-  maxCharacters: number;
-  maxCurrentUserTextCharacters: number;
-  maxIssueSummaryCharacters: number;
-  maxDeliveryFacts: number;
-  maxEvidenceRefs: number;
-  maxCalledTools: number;
-  maxConflicts: number;
-  maxToolErrors: number;
-  maxExcludedHypotheses: number;
-}
-
-const DEFAULT_LIMITS: ModelContextLimits = {
-  maxCharacters: 8_000,
-  maxCurrentUserTextCharacters: 2_000,
-  maxIssueSummaryCharacters: 500,
+const ITEM_LIMITS = {
   maxDeliveryFacts: 10,
   maxEvidenceRefs: 30,
   maxCalledTools: 10,
   maxConflicts: 10,
   maxToolErrors: 10,
   maxExcludedHypotheses: 10,
-};
+} as const;
 
 export function buildModelContext(
   state: AgentSessionState,
   purpose: ModelContextPurpose,
   options: {
     currentUserText?: string;
-    limits?: Partial<ModelContextLimits>;
+    budget?: Partial<ContextBudget>;
   } = {},
 ): ModelContext {
-  const limits = validateLimits({ ...DEFAULT_LIMITS, ...options.limits });
+  const budget = resolveContextBudget(options.budget);
+  const maximum = modelContextCharacterBudget(budget);
   const omitted: Record<string, number> = {};
   const issueSummary = truncateText(
     state.currentIssue.summary,
-    limits.maxIssueSummaryCharacters,
+    Math.min(500, budget.maxCurrentQuestionCharacters),
     "currentIssueCharacters",
     omitted,
   );
@@ -193,29 +192,58 @@ export function buildModelContext(
       ...state.currentIssue,
       summary: issueSummary,
     },
-    truncation: { truncated: false, omitted },
+    modelContextStatus: {
+      contextIncomplete: false,
+      criticalInformationOmitted: false,
+      omittedSections: [],
+      omitted,
+      usedCharacters: 0,
+      maxCharacters: maximum,
+    },
   };
 
   if (purpose === "extract_context") {
     if (options.currentUserText?.trim()) {
       context.currentUserText = truncateText(
         options.currentUserText.trim(),
-        limits.maxCurrentUserTextCharacters,
+        budget.maxCurrentQuestionCharacters,
         "currentUserTextCharacters",
         omitted,
       );
+    }
+    context.recentConversation = fitArrayToSectionBudget(
+      state.recentConversation,
+      budget.maxRecentConversationCharacters,
+      "recentConversation",
+      omitted,
+    );
+    if (state.historySummary) {
+      context.historySummary = {
+        ...state.historySummary,
+        text: truncateText(
+          state.historySummary.text,
+          budget.maxHistorySummaryCharacters,
+          "historySummaryCharacters",
+          omitted,
+        ),
+      };
     }
     context.candidateContext = state.candidateContext;
     if (state.pendingQuestion) context.pendingQuestion = state.pendingQuestion;
   } else {
     context.confirmedFacts = summarizeConfirmedFacts(
       state,
-      limits.maxDeliveryFacts,
+      ITEM_LIMITS.maxDeliveryFacts,
+      omitted,
+    );
+    fitConfirmedFactsToBudget(
+      context.confirmedFacts,
+      budget.maxConfirmedFactsCharacters,
       omitted,
     );
     context.evidenceRefs = takeRecent(
       state.evidence.map((item) => item.id),
-      limits.maxEvidenceRefs,
+      ITEM_LIMITS.maxEvidenceRefs,
       "evidenceRefs",
       omitted,
     );
@@ -223,7 +251,7 @@ export function buildModelContext(
     context.unsupportedCapabilities = [...state.unsupportedCapabilities];
     context.excludedHypotheses = takeRecent(
       state.excludedHypotheses,
-      limits.maxExcludedHypotheses,
+      ITEM_LIMITS.maxExcludedHypotheses,
       "excludedHypotheses",
       omitted,
     );
@@ -233,7 +261,7 @@ export function buildModelContext(
         resolution: conflict.resolution,
         evidenceRefs: conflict.evidence.map((item) => item.id),
       })),
-      limits.maxConflicts,
+      ITEM_LIMITS.maxConflicts,
       "conflicts",
       omitted,
     );
@@ -243,7 +271,7 @@ export function buildModelContext(
         code: item.error.code,
         retryable: item.error.retryable,
       })),
-      limits.maxToolErrors,
+      ITEM_LIMITS.maxToolErrors,
       "toolErrors",
       omitted,
     );
@@ -251,12 +279,34 @@ export function buildModelContext(
     if (purpose === "select_tool") {
       context.candidateContext = state.candidateContext;
       context.connectorCapabilities = { ...state.connectorCapabilities };
-      context.recentTools = takeRecent(
-        state.calledTools,
-        limits.maxCalledTools,
+      context.recentTools = fitArrayToSectionBudget(
+        takeRecent(
+          state.calledTools,
+          ITEM_LIMITS.maxCalledTools,
+          "recentTools",
+          omitted,
+        ),
+        budget.maxToolSummariesCharacters,
         "recentTools",
         omitted,
       );
+      context.recentConversation = fitArrayToSectionBudget(
+        state.recentConversation,
+        budget.maxRecentConversationCharacters,
+        "recentConversation",
+        omitted,
+      );
+      if (state.historySummary) {
+        context.historySummary = {
+          ...state.historySummary,
+          text: truncateText(
+            state.historySummary.text,
+            budget.maxHistorySummaryCharacters,
+            "historySummaryCharacters",
+            omitted,
+          ),
+        };
+      }
       if (state.pendingQuestion)
         context.pendingQuestion = state.pendingQuestion;
     }
@@ -278,8 +328,8 @@ export function buildModelContext(
     }
   }
 
-  fitToCharacterBudget(context, limits.maxCharacters, omitted);
-  context.truncation.truncated = Object.keys(omitted).length > 0;
+  fitToCharacterBudget(context, maximum, omitted);
+  updateContextStatus(context, maximum, omitted);
   return ModelContextSchema.parse(context);
 }
 
@@ -290,18 +340,51 @@ function summarizeConfirmedFacts(
 ): NonNullable<ModelContext["confirmedFacts"]> {
   const { message, deliveries, connection, deliveryQuery } =
     state.confirmedFacts;
+  const activeMessageId = state.messageId ?? message?.messageId ?? null;
+  const scopedMessage =
+    message && (!activeMessageId || message.messageId === activeMessageId)
+      ? message
+      : null;
+  const scopedDeliveries = activeMessageId
+    ? deliveries.filter((delivery) => delivery.messageId === activeMessageId)
+    : deliveries;
+  if (message && !scopedMessage) {
+    omitted.unrelatedMessageFacts = (omitted.unrelatedMessageFacts ?? 0) + 1;
+  }
+  if (scopedDeliveries.length !== deliveries.length) {
+    omitted.unrelatedDeliveryFacts =
+      (omitted.unrelatedDeliveryFacts ?? 0) +
+      deliveries.length -
+      scopedDeliveries.length;
+  }
+  const relatedUsers = new Set(
+    [
+      scopedMessage?.senderId,
+      scopedMessage?.receiverId,
+      ...scopedDeliveries.map((delivery) => delivery.receiverId),
+    ].filter((value): value is string => Boolean(value)),
+  );
+  const scopedConnection =
+    connection &&
+    (relatedUsers.size === 0 || relatedUsers.has(connection.userId))
+      ? connection
+      : null;
+  if (connection && !scopedConnection) {
+    omitted.unrelatedConnectionFacts =
+      (omitted.unrelatedConnectionFacts ?? 0) + 1;
+  }
   return {
-    message: message
+    message: scopedMessage
       ? {
-          messageId: message.messageId,
-          exists: message.exists,
-          persisted: message.persisted,
-          status: message.status,
-          receiverId: message.receiverId,
+          messageId: scopedMessage.messageId,
+          exists: scopedMessage.exists,
+          persisted: scopedMessage.persisted,
+          status: scopedMessage.status,
+          receiverId: scopedMessage.receiverId,
         }
       : null,
     deliveries: takeRecent(
-      deliveries.map((delivery) => ({
+      scopedDeliveries.map((delivery) => ({
         messageId: delivery.messageId,
         receiverId: delivery.receiverId,
         attemptId: delivery.attemptId,
@@ -315,12 +398,12 @@ function summarizeConfirmedFacts(
       "deliveryFacts",
       omitted,
     ),
-    connection: connection
+    connection: scopedConnection
       ? {
-          userId: connection.userId,
-          state: connection.state,
-          observedAt: connection.observedAt,
-          historical: connection.historical,
+          userId: scopedConnection.userId,
+          state: scopedConnection.state,
+          observedAt: scopedConnection.observedAt,
+          historical: scopedConnection.historical,
         }
       : null,
     deliveryQuery: deliveryQuery
@@ -347,6 +430,34 @@ function takeRecent<T>(
   return values.slice(values.length - maximum);
 }
 
+function fitArrayToSectionBudget<T>(
+  values: readonly T[],
+  maximum: number,
+  key: string,
+  omitted: Record<string, number>,
+): T[] {
+  const selected = [...values];
+  while (selected.length > 0 && serializedLength(selected) > maximum) {
+    selected.shift();
+    omitted[key] = (omitted[key] ?? 0) + 1;
+  }
+  return selected;
+}
+
+function fitConfirmedFactsToBudget(
+  facts: NonNullable<ModelContext["confirmedFacts"]>,
+  maximum: number,
+  omitted: Record<string, number>,
+): void {
+  while (facts.deliveries.length > 0 && serializedLength(facts) > maximum) {
+    facts.deliveries.shift();
+    omitted.deliveryFacts = (omitted.deliveryFacts ?? 0) + 1;
+  }
+  if (serializedLength(facts) > maximum) {
+    throw new Error("confirmed facts cannot fit within their character budget");
+  }
+}
+
 function truncateText(
   value: string,
   maximum: number,
@@ -363,8 +474,11 @@ function fitToCharacterBudget(
   maximum: number,
   omitted: Record<string, number>,
 ): void {
-  const arrays: Array<[string, () => unknown[] | undefined]> = [
+  const lowPriorityArrays: Array<[string, () => unknown[] | undefined]> = [
     ["recentTools", () => context.recentTools],
+    ["recentConversation", () => context.recentConversation],
+  ];
+  const factArrays: Array<[string, () => unknown[] | undefined]> = [
     ["evidenceRefs", () => context.evidenceRefs],
     ["deliveryFacts", () => context.confirmedFacts?.deliveries],
     ["conflicts", () => context.conflicts],
@@ -384,7 +498,26 @@ function fitToCharacterBudget(
     ["missingInformation", () => context.missingInformation],
   ];
 
-  for (const [key, getValues] of arrays) {
+  for (const [key, getValues] of lowPriorityArrays) {
+    const values = getValues();
+    while (values && values.length > 0 && serializedLength(context) > maximum) {
+      values.shift();
+      omitted[key] = (omitted[key] ?? 0) + 1;
+    }
+  }
+
+  while (
+    context.historySummary &&
+    context.historySummary.text.length > 100 &&
+    serializedLength(context) > maximum
+  ) {
+    const removed = Math.min(100, context.historySummary.text.length - 100);
+    context.historySummary.text = context.historySummary.text.slice(removed);
+    omitted.historySummaryCharacters =
+      (omitted.historySummaryCharacters ?? 0) + removed;
+  }
+
+  for (const [key, getValues] of factArrays) {
     const values = getValues();
     while (values && values.length > 0 && serializedLength(context) > maximum) {
       values.shift();
@@ -433,18 +566,61 @@ function fitToCharacterBudget(
   }
 }
 
-function serializedLength(value: unknown): number {
-  return JSON.stringify(value).length;
+function updateContextStatus(
+  context: ModelContext,
+  maximum: number,
+  omitted: Record<string, number>,
+): void {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const omittedSections = [
+      ...new Set(Object.keys(omitted).map(sectionForOmission)),
+    ];
+    context.modelContextStatus = {
+      contextIncomplete: omittedSections.length > 0,
+      criticalInformationOmitted: Object.keys(omitted).some((key) =>
+        [
+          "currentUserTextCharacters",
+          "diagnosisFacts",
+          "diagnosisMissingInformation",
+          "missingInformation",
+        ].includes(key),
+      ),
+      omittedSections,
+      omitted,
+      usedCharacters: 0,
+      maxCharacters: maximum,
+    };
+    for (let sizeAttempt = 0; sizeAttempt < 4; sizeAttempt += 1) {
+      const actual = serializedLength(context);
+      if (context.modelContextStatus.usedCharacters === actual) break;
+      context.modelContextStatus.usedCharacters = actual;
+    }
+    if (serializedLength(context) <= maximum) return;
+    fitToCharacterBudget(context, maximum, omitted);
+  }
+  if (serializedLength(context) > maximum) {
+    throw new Error("model context status cannot fit within maxCharacters");
+  }
 }
 
-function validateLimits(limits: ModelContextLimits): ModelContextLimits {
-  for (const [key, value] of Object.entries(limits)) {
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      throw new Error(`${key} must be a positive safe integer`);
-    }
+function sectionForOmission(key: string): string {
+  if (key === "recentConversation") return "recentConversation";
+  if (key === "recentTools") return "toolSummaries";
+  if (key.startsWith("historySummary")) return "historySummary";
+  if (key.startsWith("currentUserText")) return "currentQuestion";
+  if (key.startsWith("currentIssue")) return "currentIssue";
+  if (
+    key.includes("Facts") ||
+    key.startsWith("evidence") ||
+    key.startsWith("conflict") ||
+    key.startsWith("unrelated")
+  ) {
+    return "confirmedFacts";
   }
-  if (limits.maxCharacters < 1_000) {
-    throw new Error("maxCharacters must be at least 1000");
-  }
-  return limits;
+  if (key.startsWith("diagnosis")) return "diagnosis";
+  return key;
+}
+
+function serializedLength(value: unknown): number {
+  return JSON.stringify(value).length;
 }
