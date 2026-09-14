@@ -24,8 +24,11 @@ import {
   AgentSessionState,
   AgentSessionStateSchema,
   CalledToolSummary,
+  PreviousIssueReference,
   SessionCandidateContextSchema,
   SessionToolName,
+  TargetSwitchDecision,
+  TargetSwitchDecisionSchema,
 } from "./session-state";
 import { buildDiagnosisInput } from "./diagnosis-input";
 
@@ -99,6 +102,20 @@ export class StateMergeError extends Error {
   }
 }
 
+export class TargetSwitchResolutionError extends Error {
+  constructor(
+    readonly code:
+      | "no_pending_switch"
+      | "decision_mismatch"
+      | "expired_switch"
+      | "version_mismatch",
+    message: string,
+  ) {
+    super(message);
+    this.name = "TargetSwitchResolutionError";
+  }
+}
+
 export function mergeCandidateContext(
   rawState: AgentSessionState,
   rawPatch: CandidateContextPatch,
@@ -119,14 +136,25 @@ export function mergeCandidateContext(
     state.messageId &&
     patch.messageId !== state.messageId
   ) {
+    const requestedAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + 5 * 60_000).toISOString();
     next.status = "awaiting_information";
     next.pendingQuestion = {
-      field: "messageId",
+      field: "targetSwitch",
       question: `当前正在排查 ${state.messageId}，请确认是否切换到 ${patch.messageId}。`,
-      askedAt: now.toISOString(),
+      askedAt: requestedAt,
+    };
+    next.pendingTargetSwitch = {
+      decisionId: targetSwitchDecisionId(state, patch.messageId, requestedAt),
+      fromIssueId: state.currentIssue.issueId,
+      fromMessageId: state.messageId,
+      toMessageId: patch.messageId,
+      requestedAt,
+      expiresAt,
     };
   } else if (
     state.pendingQuestion &&
+    !state.pendingTargetSwitch &&
     Object.hasOwn(patch, state.pendingQuestion.field) &&
     patch[state.pendingQuestion.field as keyof CandidateContextPatch]
   ) {
@@ -141,8 +169,151 @@ export function mergeCandidateContext(
         stableStringify(state.candidateContext) ||
       stableStringify(parsed.pendingQuestion) !==
         stableStringify(state.pendingQuestion) ||
+      stableStringify(parsed.pendingTargetSwitch) !==
+        stableStringify(state.pendingTargetSwitch) ||
       parsed.status !== state.status,
   };
+}
+
+export function resolveTargetSwitch(
+  rawState: AgentSessionState,
+  rawDecision: TargetSwitchDecision,
+  now: Date = new Date(),
+): StateMutationResult {
+  const state = AgentSessionStateSchema.parse(rawState);
+  const decision = TargetSwitchDecisionSchema.parse(rawDecision);
+  const pending = state.pendingTargetSwitch;
+  if (!pending) {
+    throw new TargetSwitchResolutionError(
+      "no_pending_switch",
+      "there is no pending target switch",
+    );
+  }
+  if (state.version !== decision.expectedVersion) {
+    throw new TargetSwitchResolutionError(
+      "version_mismatch",
+      "target switch decision is based on a stale session version",
+    );
+  }
+  if (pending.decisionId !== decision.decisionId) {
+    throw new TargetSwitchResolutionError(
+      "decision_mismatch",
+      "target switch decision does not match the pending request",
+    );
+  }
+  if (Date.parse(pending.expiresAt) <= now.getTime()) {
+    throw new TargetSwitchResolutionError(
+      "expired_switch",
+      "target switch decision has expired",
+    );
+  }
+  if (
+    state.messageId !== pending.fromMessageId ||
+    state.currentIssue.issueId !== pending.fromIssueId
+  ) {
+    throw new TargetSwitchResolutionError(
+      "decision_mismatch",
+      "active diagnosis target changed after confirmation was requested",
+    );
+  }
+
+  if (decision.decision === "reject") {
+    const rejected = AgentSessionStateSchema.parse({
+      ...state,
+      candidateContext: {
+        ...state.candidateContext,
+        messageId: state.messageId,
+      },
+      pendingQuestion: null,
+      pendingTargetSwitch: null,
+      status: "selecting_tool",
+    });
+    return { state: rejected, changed: true };
+  }
+
+  const archivedIssue: PreviousIssueReference = {
+    issueId:
+      state.currentIssue.issueId ??
+      issueIdFor(state.sessionId, state.messageId, state.version, "legacy"),
+    messageId: state.messageId,
+    summary: state.currentIssue.summary,
+    classification: state.diagnosisResult?.classification ?? null,
+    closedAt: now.toISOString(),
+  };
+  const previousIssues = takeRecent(
+    upsertPreviousIssue(state.previousIssues, archivedIssue),
+    10,
+  );
+  const reopened = [...previousIssues]
+    .reverse()
+    .find(
+      (issue) =>
+        issue.messageId === pending.toMessageId &&
+        issue.issueId !== archivedIssue.issueId,
+    );
+  const switched = AgentSessionStateSchema.parse({
+    ...state,
+    currentIssue: {
+      issueId: issueIdFor(
+        state.sessionId,
+        pending.toMessageId,
+        state.version,
+        now.toISOString(),
+      ),
+      reopenedFromIssueId: reopened?.issueId ?? null,
+      problemType: null,
+      summary: `检查消息 ${pending.toMessageId}`,
+    },
+    previousIssues,
+    candidateContext: { messageId: pending.toMessageId },
+    userId: null,
+    conversationId: null,
+    messageId: null,
+    timeRange: null,
+    matchResolution: null,
+    confirmedFacts: {},
+    evidence: [],
+    excludedHypotheses: [],
+    missingInformation: [],
+    unsupportedCapabilities: [],
+    conflicts: [],
+    calledTools: [],
+    toolErrors: [],
+    pendingQuestion: null,
+    pendingTargetSwitch: null,
+    confirmationState: { status: "not_required" },
+    diagnosisResult: null,
+    status: "selecting_tool",
+  });
+  return { state: switched, changed: true };
+}
+
+export function expireTargetSwitch(
+  rawState: AgentSessionState,
+  now: Date = new Date(),
+): StateMutationResult {
+  const state = AgentSessionStateSchema.parse(rawState);
+  if (
+    !state.pendingTargetSwitch ||
+    Date.parse(state.pendingTargetSwitch.expiresAt) > now.getTime()
+  ) {
+    return { state, changed: false };
+  }
+  const expired = AgentSessionStateSchema.parse({
+    ...state,
+    candidateContext: {
+      ...state.candidateContext,
+      messageId: state.messageId,
+    },
+    pendingTargetSwitch: null,
+    pendingQuestion: {
+      field: "messageId",
+      question: "诊断目标切换确认已过期，请重新提供需要排查的 messageId。",
+      askedAt: now.toISOString(),
+    },
+    status: "awaiting_information",
+  });
+  return { state: expired, changed: true };
 }
 
 export function mergeToolResult(
@@ -619,6 +790,45 @@ function unique(values: string[]): string[] {
 
 function takeRecent<T>(values: T[], maximum: number): T[] {
   return values.length <= maximum ? values : values.slice(-maximum);
+}
+
+function upsertPreviousIssue(
+  current: PreviousIssueReference[],
+  incoming: PreviousIssueReference,
+): PreviousIssueReference[] {
+  return [
+    ...current.filter((issue) => issue.issueId !== incoming.issueId),
+    incoming,
+  ];
+}
+
+function targetSwitchDecisionId(
+  state: AgentSessionState,
+  toMessageId: string,
+  requestedAt: string,
+): string {
+  return `switch_${createHash("sha256")
+    .update(
+      stableStringify({
+        sessionId: state.sessionId,
+        version: state.version,
+        fromMessageId: state.messageId,
+        toMessageId,
+        requestedAt,
+      }),
+    )
+    .digest("hex")}`;
+}
+
+function issueIdFor(
+  sessionId: string,
+  messageId: string,
+  version: number,
+  discriminator: string,
+): string {
+  return `issue_${createHash("sha256")
+    .update(stableStringify({ sessionId, messageId, version, discriminator }))
+    .digest("hex")}`;
 }
 
 function requireEvidence(evidence: Evidence[], subject: string): void {

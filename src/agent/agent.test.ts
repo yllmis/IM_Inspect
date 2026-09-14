@@ -241,6 +241,107 @@ describe("runAgent stateful loop", () => {
     expect(saved?.pendingQuestion).toBeNull();
   });
 
+  it("requires a bound decision before switching diagnosis targets", async () => {
+    const runtime = testRuntime();
+    const firstModel = new MockLanguageModelV4({
+      doGenerate: [
+        extraction("msg_delivered"),
+        toolCallResult("call_message_initial", "get_message_status", {
+          messageId: "msg_delivered",
+        }),
+        toolCallResult("call_delivery_initial", "get_delivery_events", {
+          messageId: "msg_delivered",
+        }),
+        responseResult("delivered", "已确认送达。"),
+      ],
+    });
+    await runAgent({
+      sessionId: "session_target_switch",
+      text: "先检查 msg_delivered",
+      model: firstModel,
+      toolContext: runtime.context("run_switch_initial"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+    });
+
+    const proposalModel = new MockLanguageModelV4({
+      doGenerate: [extraction("msg_other")],
+    });
+    const proposed = await runAgent({
+      sessionId: "session_target_switch",
+      text: "再检查 msg_other",
+      model: proposalModel,
+      toolContext: runtime.context("run_switch_proposal"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+    });
+
+    expect(proposed).toMatchObject({
+      status: "awaiting_information",
+      pendingAction: {
+        type: "switch_diagnosis_target",
+        fromMessageId: "msg_delivered",
+        toMessageId: "msg_other",
+      },
+    });
+    const stillCurrent = await runtime.store.load({
+      sessionId: "session_target_switch",
+      tenantId: "tenant_test",
+      actorId: "support_test",
+    });
+    expect(stillCurrent).toMatchObject({
+      messageId: "msg_delivered",
+      confirmedFacts: { message: { messageId: "msg_delivered" } },
+    });
+
+    const confirmationModel = new MockLanguageModelV4({
+      doGenerate: [
+        toolCallResult("call_message_switched", "get_message_status", {
+          messageId: "msg_other",
+        }),
+        responseResult(
+          "insufficient_data",
+          "已切换，但本次未能确认新消息状态。",
+        ),
+      ],
+    });
+    const switched = await runAgent({
+      sessionId: "session_target_switch",
+      text: "确认切换",
+      model: confirmationModel,
+      toolContext: runtime.context("run_switch_confirm"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+      targetSwitchDecision: {
+        type: "resolve_target_switch",
+        decisionId: proposed.pendingAction!.decisionId,
+        decision: "confirm",
+        expectedVersion: proposed.stateVersion,
+      },
+    });
+
+    expect(confirmationModel.doGenerateCalls).toHaveLength(2);
+    expect(switched).toMatchObject({
+      candidateContext: { messageId: "msg_other" },
+      diagnosis: { classification: "insufficient_data" },
+    });
+    const saved = await runtime.store.load({
+      sessionId: "session_target_switch",
+      tenantId: "tenant_test",
+      actorId: "support_test",
+    });
+    expect(saved).toMatchObject({
+      currentIssue: { summary: "检查消息 msg_other" },
+      messageId: null,
+      confirmedFacts: { message: null },
+      previousIssues: [{ messageId: "msg_delivered" }],
+      pendingTargetSwitch: null,
+    });
+  });
+
   it("records a timeout as a tool error without creating a message fact", async () => {
     class TimeoutConnector extends FakeConnector {
       override async getMessageStatus(): Promise<ConnectorResult<MessageFact>> {

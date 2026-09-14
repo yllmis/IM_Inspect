@@ -15,6 +15,8 @@ import {
   mergeCandidateContext,
   mergeDiagnosisResult,
   mergeToolResult,
+  resolveTargetSwitch,
+  TargetSwitchResolutionError,
 } from "./state-merge";
 
 const now = new Date("2026-09-07T10:00:00Z");
@@ -100,9 +102,154 @@ describe("mergeCandidateContext", () => {
       messageId: "msg_delivered",
       candidateContext: { messageId: "msg_other" },
       status: "awaiting_information",
-      pendingQuestion: { field: "messageId" },
+      pendingQuestion: { field: "targetSwitch" },
+      pendingTargetSwitch: {
+        fromMessageId: "msg_delivered",
+        toMessageId: "msg_other",
+      },
       confirmedFacts: { message: { messageId: "msg_delivered" } },
     });
+  });
+});
+
+describe("resolveTargetSwitch", () => {
+  function pendingSwitch(toMessageId = "msg_other") {
+    const fixture = loadFixture("delivered");
+    const current = AgentSessionStateSchema.parse({
+      ...session(),
+      messageId: fixture.message.messageId,
+      confirmedFacts: { message: fixture.message },
+    });
+    return mergeCandidateContext(current, { messageId: toMessageId }, now)
+      .state;
+  }
+
+  it("starts a clean issue after an explicitly bound confirmation", () => {
+    const pending = pendingSwitch();
+    const result = resolveTargetSwitch(
+      pending,
+      {
+        type: "resolve_target_switch",
+        decisionId: pending.pendingTargetSwitch!.decisionId,
+        decision: "confirm",
+        expectedVersion: pending.version,
+      },
+      new Date("2026-09-07T10:01:00Z"),
+    );
+
+    expect(result.state).toMatchObject({
+      currentIssue: {
+        summary: "检查消息 msg_other",
+        reopenedFromIssueId: null,
+      },
+      candidateContext: { messageId: "msg_other" },
+      messageId: null,
+      confirmedFacts: {
+        message: null,
+        deliveries: [],
+        connection: null,
+        deliveryQuery: null,
+      },
+      pendingQuestion: null,
+      pendingTargetSwitch: null,
+      diagnosisResult: null,
+    });
+    expect(result.state.previousIssues).toEqual([
+      expect.objectContaining({
+        messageId: "msg_delivered",
+        summary: "用户反馈消息没有收到",
+      }),
+    ]);
+  });
+
+  it("links a repeated message to its previous issue without restoring stale facts", () => {
+    const state = AgentSessionStateSchema.parse({
+      ...pendingSwitch("msg_previous"),
+      previousIssues: [
+        {
+          issueId: "issue_previous",
+          messageId: "msg_previous",
+          summary: "第一次检查 msg_previous",
+          classification: "not_delivered",
+          closedAt: "2026-09-07T09:00:00Z",
+        },
+      ],
+    });
+    const result = resolveTargetSwitch(
+      state,
+      {
+        type: "resolve_target_switch",
+        decisionId: state.pendingTargetSwitch!.decisionId,
+        decision: "confirm",
+        expectedVersion: state.version,
+      },
+      new Date("2026-09-07T10:01:00Z"),
+    );
+
+    expect(result.state.currentIssue.reopenedFromIssueId).toBe(
+      "issue_previous",
+    );
+    expect(result.state.confirmedFacts.message).toBeNull();
+    expect(result.state.messageId).toBeNull();
+  });
+
+  it("keeps the active issue when the operator rejects the switch", () => {
+    const pending = pendingSwitch();
+    const result = resolveTargetSwitch(
+      pending,
+      {
+        type: "resolve_target_switch",
+        decisionId: pending.pendingTargetSwitch!.decisionId,
+        decision: "reject",
+        expectedVersion: pending.version,
+      },
+      new Date("2026-09-07T10:01:00Z"),
+    );
+
+    expect(result.state.messageId).toBe("msg_delivered");
+    expect(result.state.confirmedFacts.message?.messageId).toBe(
+      "msg_delivered",
+    );
+    expect(result.state.candidateContext.messageId).toBe("msg_delivered");
+    expect(result.state.pendingTargetSwitch).toBeNull();
+  });
+
+  it("rejects a stale or unrelated confirmation", () => {
+    const pending = pendingSwitch();
+
+    expect(() =>
+      resolveTargetSwitch(pending, {
+        type: "resolve_target_switch",
+        decisionId: "switch_unrelated",
+        decision: "confirm",
+        expectedVersion: pending.version,
+      }),
+    ).toThrowError(TargetSwitchResolutionError);
+    expect(() =>
+      resolveTargetSwitch(pending, {
+        type: "resolve_target_switch",
+        decisionId: pending.pendingTargetSwitch!.decisionId,
+        decision: "confirm",
+        expectedVersion: pending.version + 1,
+      }),
+    ).toThrowError(TargetSwitchResolutionError);
+  });
+
+  it("rejects a confirmation after the pending switch expires", () => {
+    const pending = pendingSwitch();
+
+    expect(() =>
+      resolveTargetSwitch(
+        pending,
+        {
+          type: "resolve_target_switch",
+          decisionId: pending.pendingTargetSwitch!.decisionId,
+          decision: "confirm",
+          expectedVersion: pending.version,
+        },
+        new Date("2026-09-07T10:06:00Z"),
+      ),
+    ).toThrowError(TargetSwitchResolutionError);
   });
 });
 

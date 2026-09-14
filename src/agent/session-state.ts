@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { IdentifierSchema } from "../connectors/connector";
@@ -36,6 +37,8 @@ export type AgentSessionStatus = z.infer<typeof AgentSessionStatusSchema>;
 
 export const CurrentIssueSchema = z
   .object({
+    issueId: IdentifierSchema.nullable().default(null),
+    reopenedFromIssueId: IdentifierSchema.nullable().default(null),
     problemType: z.string().trim().min(1).max(128).nullable().default(null),
     summary: z.string().trim().min(1).max(1_000),
   })
@@ -103,6 +106,53 @@ export const PendingQuestionSchema = z
   .strict();
 export type PendingQuestion = z.infer<typeof PendingQuestionSchema>;
 
+export const PendingTargetSwitchSchema = z
+  .object({
+    decisionId: IdentifierSchema,
+    fromIssueId: IdentifierSchema.nullable().default(null),
+    fromMessageId: IdentifierSchema,
+    toMessageId: IdentifierSchema,
+    requestedAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .refine(
+    ({ requestedAt, expiresAt }) =>
+      Date.parse(requestedAt) < Date.parse(expiresAt),
+    {
+      message: "target switch expiration must be after request time",
+      path: ["expiresAt"],
+    },
+  )
+  .refine(({ fromMessageId, toMessageId }) => fromMessageId !== toMessageId, {
+    message: "target switch must change messageId",
+    path: ["toMessageId"],
+  });
+export type PendingTargetSwitch = z.infer<typeof PendingTargetSwitchSchema>;
+
+export const TargetSwitchDecisionSchema = z
+  .object({
+    type: z.literal("resolve_target_switch"),
+    decisionId: IdentifierSchema,
+    decision: z.enum(["confirm", "reject"]),
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict();
+export type TargetSwitchDecision = z.infer<typeof TargetSwitchDecisionSchema>;
+
+export const PreviousIssueReferenceSchema = z
+  .object({
+    issueId: IdentifierSchema,
+    messageId: IdentifierSchema,
+    summary: z.string().trim().min(1).max(1_000),
+    classification: DiagnosisClassificationSchema.nullable().default(null),
+    closedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type PreviousIssueReference = z.infer<
+  typeof PreviousIssueReferenceSchema
+>;
+
 const confirmationBinding = {
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   idempotencyKey: z.string().trim().min(16).max(128),
@@ -133,6 +183,7 @@ export const AgentSessionStateSchema = z
     tenantId: IdentifierSchema,
     actorId: IdentifierSchema,
     currentIssue: CurrentIssueSchema,
+    previousIssues: z.array(PreviousIssueReferenceSchema).max(10).default([]),
     candidateContext: SessionCandidateContextSchema,
     // 顶层 ID 只保存已经唯一定位的对象，不能直接复制模型候选值。
     userId: IdentifierSchema.nullable().default(null),
@@ -156,6 +207,7 @@ export const AgentSessionStateSchema = z
     calledTools: z.array(CalledToolSummarySchema).max(20).default([]),
     toolErrors: z.array(DiagnosisToolErrorSchema).max(20).default([]),
     pendingQuestion: PendingQuestionSchema.nullable().default(null),
+    pendingTargetSwitch: PendingTargetSwitchSchema.nullable().default(null),
     confirmationState: ConfirmationStateSchema.default({
       status: "not_required",
     }),
@@ -192,6 +244,16 @@ export const AgentSessionStateSchema = z
         message: "evidence ids must be unique",
       });
     }
+    if (
+      state.pendingTargetSwitch &&
+      (!state.pendingQuestion || state.pendingQuestion.field !== "targetSwitch")
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pendingQuestion"],
+        message: "pending target switch requires a bound pending question",
+      });
+    }
     const capabilityNames = Object.keys(state.connectorCapabilities);
     if (
       capabilityNames.length > 20 ||
@@ -226,6 +288,8 @@ export function createAgentSessionState(input: {
     tenantId: input.tenantId,
     actorId: input.actorId,
     currentIssue: {
+      issueId: `issue_${randomUUID()}`,
+      reopenedFromIssueId: null,
       problemType: input.problemType ?? null,
       summary: input.issueSummary,
     },

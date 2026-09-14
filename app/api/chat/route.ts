@@ -3,6 +3,8 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 
 import { runAgent } from "../../../src/agent/agent";
+import { TargetSwitchDecisionSchema } from "../../../src/agent/session-state";
+import { TargetSwitchResolutionError } from "../../../src/agent/state-merge";
 import { StateStoreError } from "../../../src/agent/state-store";
 import { IdentifierSchema } from "../../../src/connectors/connector";
 import { FakeConnector } from "../../../src/connectors/fake/fake-connector";
@@ -20,6 +22,7 @@ const RequestSchema = z
   .object({
     sessionId: IdentifierSchema.optional(),
     text: z.string().trim().min(1).max(20_000),
+    action: TargetSwitchDecisionSchema.optional(),
   })
   .strict();
 
@@ -72,6 +75,7 @@ export async function POST(request: Request) {
       toolContext,
       registry,
       stateStore,
+      targetSwitchDecision: parsed.data.action,
     });
     return NextResponse.json({ ...result, traces: toolContext.traces });
   } catch (error) {
@@ -84,6 +88,12 @@ export async function POST(request: Request) {
     if (error instanceof StateStoreError && error.code === "version_conflict") {
       return NextResponse.json(
         { error: "state_version_conflict", retryable: true },
+        { status: 409 },
+      );
+    }
+    if (error instanceof TargetSwitchResolutionError) {
+      return NextResponse.json(
+        { error: `target_switch_${error.code}` },
         { status: 409 },
       );
     }

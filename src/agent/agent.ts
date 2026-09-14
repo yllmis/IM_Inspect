@@ -24,14 +24,17 @@ import {
   AgentSessionState,
   AgentSessionStateSchema,
   createAgentSessionState,
+  TargetSwitchDecision,
 } from "./session-state";
 import {
   CandidateContextPatch,
   DiagnosticToolName,
+  expireTargetSwitch,
   hashToolInput,
   mergeCandidateContext,
   mergeDiagnosisResult,
   mergeToolResult,
+  resolveTargetSwitch,
 } from "./state-merge";
 import {
   SessionStateIdentity,
@@ -57,6 +60,7 @@ export interface AgentInput {
   toolContext: ToolContext;
   registry: ToolRegistry;
   stateStore: StateStore;
+  targetSwitchDecision?: TargetSwitchDecision;
   maxSteps?: number;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -80,6 +84,13 @@ export interface AgentExecutionResult {
   steps: number;
   stopReason?: string;
   modelText: string;
+  pendingAction?: {
+    type: "switch_diagnosis_target";
+    decisionId: string;
+    fromMessageId: string;
+    toMessageId: string;
+    expiresAt: string;
+  };
 }
 
 export async function runAgent(
@@ -102,16 +113,51 @@ export async function runAgent(
   let repeatedCall = false;
   let lastToolFailed = false;
 
-  state = withStatus(state, "extracting_context");
-  const extracted = await extractCandidateContext({
-    model: input.model,
-    modelContext: buildModelContext(state, "extract_context", {
-      currentUserText: input.text,
-    }),
-  });
-  const candidatePatch = nonNullCandidatePatch(extracted);
-  if (candidatePatch) {
-    state = mergeCandidateContext(state, candidatePatch, now()).state;
+  const expiredSwitch = expireTargetSwitch(state, now());
+  if (expiredSwitch.changed) {
+    state = expiredSwitch.state;
+    const diagnosis = refreshDiagnosis(state, input);
+    state = diagnosis.state;
+    const saved = await input.stateStore.save(state, expectedVersion);
+    return executionResult({
+      state: saved,
+      diagnosis: diagnosis.result,
+      reply: saved.pendingQuestion!.question,
+      modelText: "",
+      calls,
+      steps: 0,
+      stopReason: "ask_for_information",
+    });
+  }
+
+  if (state.pendingTargetSwitch && !input.targetSwitchDecision) {
+    const diagnosis =
+      state.diagnosisResult ?? refreshDiagnosis(state, input).result;
+    return executionResult({
+      state,
+      diagnosis,
+      reply: state.pendingQuestion!.question,
+      modelText: "",
+      calls,
+      steps: 0,
+      stopReason: "ask_for_information",
+    });
+  }
+
+  if (input.targetSwitchDecision) {
+    state = resolveTargetSwitch(state, input.targetSwitchDecision, now()).state;
+  } else {
+    state = withStatus(state, "extracting_context");
+    const extracted = await extractCandidateContext({
+      model: input.model,
+      modelContext: buildModelContext(state, "extract_context", {
+        currentUserText: input.text,
+      }),
+    });
+    const candidatePatch = nonNullCandidatePatch(extracted);
+    if (candidatePatch) {
+      state = mergeCandidateContext(state, candidatePatch, now()).state;
+    }
   }
 
   let diagnosis = refreshDiagnosis(state, input);
@@ -404,6 +450,15 @@ function executionResult(input: {
     steps: input.steps,
     stopReason: input.stopReason,
     modelText: input.modelText,
+    pendingAction: input.state.pendingTargetSwitch
+      ? {
+          type: "switch_diagnosis_target",
+          decisionId: input.state.pendingTargetSwitch.decisionId,
+          fromMessageId: input.state.pendingTargetSwitch.fromMessageId,
+          toMessageId: input.state.pendingTargetSwitch.toMessageId,
+          expiresAt: input.state.pendingTargetSwitch.expiresAt,
+        }
+      : undefined,
   };
 }
 
