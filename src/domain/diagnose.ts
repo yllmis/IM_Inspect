@@ -37,17 +37,6 @@ export function diagnose(input: DiagnosisInput): DiagnosisResult {
     toolErrors: context.toolErrors,
   };
 
-  if (!context.messageId) {
-    return result({
-      ...base,
-      classification: "insufficient_data",
-      facts: [],
-      evidence: [],
-      missingInformation: ["messageId"],
-      recommendedAction: "ask_for_more_info",
-    });
-  }
-
   if (
     (context.matchResolution && context.matchResolution !== "unique") ||
     context.toolErrors?.some((item) => item.error.code === "ambiguous_match")
@@ -58,6 +47,17 @@ export function diagnose(input: DiagnosisInput): DiagnosisResult {
       facts: [],
       evidence: [],
       missingInformation: ["uniqueMessageMatch"],
+      recommendedAction: "ask_for_more_info",
+    });
+  }
+
+  if (!context.messageId) {
+    return result({
+      ...base,
+      classification: "insufficient_data",
+      facts: [],
+      evidence: [],
+      missingInformation: ["messageId"],
       recommendedAction: "ask_for_more_info",
     });
   }

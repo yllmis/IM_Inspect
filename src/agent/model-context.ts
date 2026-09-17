@@ -11,6 +11,7 @@ import {
 } from "./session-state";
 import {
   ContextBudget,
+  ContextBudgetExceededError,
   modelContextCharacterBudget,
   resolveContextBudget,
 } from "./context-budget";
@@ -25,6 +26,7 @@ import {
 import { MessageStatusSchema } from "../domain/message";
 import { DeliveryStatusSchema } from "../domain/delivery";
 import { ConnectionStateSchema } from "../domain/connection";
+import { EvidenceKindSchema } from "../domain/evidence";
 
 export const ModelContextPurposeSchema = z.enum([
   "extract_context",
@@ -90,6 +92,16 @@ const ConfirmedFactsSummarySchema = z
   })
   .strict();
 
+const KeyEvidenceSummarySchema = z
+  .object({
+    id: z.string().min(1).max(256),
+    source: z.string().min(1).max(128),
+    kind: EvidenceKindSchema,
+    observedAt: z.string().datetime({ offset: true }),
+    field: z.string().min(1).max(128),
+  })
+  .strict();
+
 const ConflictSummarySchema = z
   .object({
     subject: z.string(),
@@ -135,6 +147,7 @@ export const ModelContextSchema = z
     historySummary: ConversationHistorySummarySchema.optional(),
     candidateContext: SessionCandidateContextSchema.optional(),
     confirmedFacts: ConfirmedFactsSummarySchema.optional(),
+    keyEvidence: z.array(KeyEvidenceSummarySchema).optional(),
     evidenceRefs: z.array(z.string()).optional(),
     missingInformation: z.array(z.string()).optional(),
     unsupportedCapabilities: z.array(z.string()).optional(),
@@ -240,6 +253,15 @@ export function buildModelContext(
       context.confirmedFacts,
       budget.maxConfirmedFactsCharacters,
       omitted,
+    );
+    context.keyEvidence = (state.diagnosisResult?.evidence ?? []).map(
+      (evidence) => ({
+        id: evidence.id,
+        source: evidence.source,
+        kind: evidence.kind,
+        observedAt: evidence.observedAt,
+        field: evidence.field,
+      }),
     );
     context.evidenceRefs = takeRecent(
       state.evidence.map((item) => item.id),
@@ -454,7 +476,10 @@ function fitConfirmedFactsToBudget(
     omitted.deliveryFacts = (omitted.deliveryFacts ?? 0) + 1;
   }
   if (serializedLength(facts) > maximum) {
-    throw new Error("confirmed facts cannot fit within their character budget");
+    throw new ContextBudgetExceededError(
+      "model_input_too_large",
+      "confirmed facts cannot fit within their character budget",
+    );
   }
 }
 
@@ -562,7 +587,10 @@ function fitToCharacterBudget(
   }
 
   if (serializedLength(context) > maximum) {
-    throw new Error("model context cannot fit within maxCharacters");
+    throw new ContextBudgetExceededError(
+      "model_input_too_large",
+      "required model context cannot fit within maxCharacters",
+    );
   }
 }
 
@@ -599,7 +627,10 @@ function updateContextStatus(
     fitToCharacterBudget(context, maximum, omitted);
   }
   if (serializedLength(context) > maximum) {
-    throw new Error("model context status cannot fit within maxCharacters");
+    throw new ContextBudgetExceededError(
+      "model_input_too_large",
+      "model context status cannot fit within maxCharacters",
+    );
   }
 }
 

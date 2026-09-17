@@ -62,6 +62,8 @@ export function recordConversationExchange(
           summarizedMessages:
             (state.historySummary?.summarizedMessages ?? 0) + evicted.length,
           updatedAt: now.toISOString(),
+          contextOnly: true as const,
+          evidenceEligible: false as const,
         };
 
   return AgentSessionStateSchema.parse({

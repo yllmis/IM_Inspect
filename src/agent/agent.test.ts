@@ -1,7 +1,10 @@
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 
-import { ConnectorResult } from "../connectors/connector";
+import {
+  ConnectorResult,
+  FindUserOrMessageResult,
+} from "../connectors/connector";
 import { FakeConnector } from "../connectors/fake/fake-connector";
 import { DiagnosisClassification } from "../domain/diagnosis";
 import { MessageFact } from "../domain/message";
@@ -560,5 +563,83 @@ describe("runAgent stateful loop", () => {
       steps: 1,
       stopReason: "max_steps",
     });
+  });
+
+  it("does not select a user when a lookup returns multiple matches", async () => {
+    class MultipleUserConnector extends FakeConnector {
+      override async findUserOrMessage(): Promise<
+        ConnectorResult<FindUserOrMessageResult>
+      > {
+        const observedAt = "2026-09-07T08:00:00Z";
+        return {
+          ok: true,
+          source: "fixture:multiple-users",
+          data: {
+            resolutionStatus: "multiple",
+            truncated: false,
+            matches: ["user_001", "user_002"].map((userId) => ({
+              entityType: "user" as const,
+              userId,
+              displayName: "小明",
+              observedAt,
+              evidence: [
+                {
+                  id: `fixture:multiple-users:${userId}`,
+                  source: "fixture:multiple-users",
+                  kind: "message" as const,
+                  observedAt,
+                  field: "user_match",
+                  value: userId,
+                },
+              ],
+            })),
+          },
+        };
+      }
+    }
+
+    const runtime = testRuntime(new MultipleUserConnector("delivered"));
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        extraction(null),
+        toolCallResult("call_find_users", "find_user_or_message", {
+          displayName: "小明",
+        }),
+        responseResult(
+          "insufficient_data",
+          "匹配到多个用户，请提供唯一用户或消息标识。",
+        ),
+      ],
+    });
+
+    const result = await runAgent({
+      sessionId: "session_multiple_users",
+      text: "帮我检查小明反馈的消息问题",
+      model,
+      toolContext: runtime.context("run_multiple_users"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+    });
+
+    expect(result).toMatchObject({
+      status: "awaiting_information",
+      diagnosis: {
+        classification: "insufficient_data",
+        missingInformation: ["uniqueMessageMatch"],
+      },
+    });
+    const saved = await runtime.store.load({
+      sessionId: "session_multiple_users",
+      tenantId: "tenant_test",
+      actorId: "support_test",
+    });
+    expect(saved).toMatchObject({
+      matchResolution: "multiple",
+      userId: null,
+      messageId: null,
+      confirmedFacts: { message: null },
+    });
+    expect(saved?.evidence).toEqual([]);
   });
 });

@@ -167,6 +167,8 @@ export const ConversationHistorySummarySchema = z
     text: z.string().trim().min(1).max(2_000),
     summarizedMessages: z.number().int().positive(),
     updatedAt: z.string().datetime({ offset: true }),
+    contextOnly: z.literal(true).default(true),
+    evidenceEligible: z.literal(false).default(false),
   })
   .strict();
 export type ConversationHistorySummary = z.infer<

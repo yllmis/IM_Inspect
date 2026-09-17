@@ -108,6 +108,20 @@ describe("diagnose safety boundaries", () => {
     expect(result.missingInformation).toEqual(["uniqueMessageMatch"]);
   });
 
+  it("asks for a unique match before asking for messageId", () => {
+    const result = diagnose({
+      rawText: "查询显示名相同的用户",
+      matchResolution: "multiple",
+    });
+
+    expect(result).toMatchObject({
+      classification: "insufficient_data",
+      facts: [],
+      evidence: [],
+      missingInformation: ["uniqueMessageMatch"],
+    });
+  });
+
   it("preserves timeout as a tool error without turning it into facts", () => {
     const result = diagnose({
       rawText: "消息状态查询超时",
