@@ -109,6 +109,10 @@ Work in a loop:
 
 Do not generate dozens of files at once. Prefer one model, one interface, one tool, one test, and one runnable Agent call per slice.
 
+### Code comments for learning
+
+At the start of each new implementation stage or focused work slice, add concise comments in the code for the domain terms, state boundaries, and important method names introduced by that stage. Comments should explain why a boundary or method exists and how it relates to the Agent flow; do not add line-by-line narration for self-explanatory code. Keep comments synchronized with behavior and include the relevant term when a name may be unfamiliar, such as `CandidateContext`, `ConfirmedFacts`, `buildModelContext`, or `diagnose`.
+
 ### Learning check
 
 After each implementation, ensure the owner can answer:
