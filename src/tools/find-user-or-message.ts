@@ -18,6 +18,7 @@ export function findUserOrMessageDefinition(
     name: "find_user_or_message",
     permission: "diagnosis:read",
     timeoutMs: 2_000,
+    maxAttempts: 2,
     maxOutputBytes: 64_000,
     readOnly: true,
     inputSchema: FindUserOrMessageInputSchema,

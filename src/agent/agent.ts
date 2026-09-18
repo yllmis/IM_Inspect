@@ -43,7 +43,6 @@ import {
   CandidateContextPatch,
   DiagnosticToolName,
   expireTargetSwitch,
-  hashToolInput,
   mergeCandidateContext,
   mergeDiagnosisResult,
   mergeToolResult,
@@ -126,7 +125,6 @@ export async function runAgent(
   });
   const expectedVersion = state.version;
   const calls: AgentToolCall[] = [];
-  const cache = new Map<string, ToolResponse<unknown>>();
   let repeatedCall = false;
   let lastToolFailed = false;
 
@@ -225,36 +223,22 @@ export async function runAgent(
   state = withStatus(state, "selecting_tool");
 
   const execute = async (name: DiagnosticToolName, args: unknown) => {
-    const key = hashToolInput(name, args);
-    const cached = cache.get(key);
-    if (cached) {
-      repeatedCall = true;
-      calls.push({ name, args, response: cached, cached: true });
-      state = mergeToolResult(state, {
-        toolName: name,
-        args,
-        response: cached,
-        calledAt: now(),
-        cached: true,
-      }).state;
-      diagnosis = refreshDiagnosis(state, input);
-      state = diagnosis.state;
-      return modelToolResult(state, cached, contextBudget);
-    }
-
     state = withStatus(state, "calling_tool");
     const response = await input.registry.execute(
       name,
       args,
       input.toolContext,
     );
-    cache.set(key, response);
-    calls.push({ name, args, response, cached: false });
+    // ToolRegistry 统一拥有 Run 内去重；Agent 只根据 meta 识别无进展循环并停止。
+    const cached = response.meta.cached;
+    repeatedCall = repeatedCall || cached;
+    calls.push({ name, args, response, cached });
     state = mergeToolResult(state, {
       toolName: name,
       args,
       response,
       calledAt: now(),
+      cached,
     }).state;
     state = withStatus(state, "evaluating_evidence");
     diagnosis = refreshDiagnosis(state, input);

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const ToolErrorCodeSchema = z.enum([
   "invalid_argument",
+  "tool_not_found",
   "permission_denied",
   "not_found",
   "ambiguous_match",

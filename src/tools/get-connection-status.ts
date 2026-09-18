@@ -27,6 +27,7 @@ export function getConnectionStatusDefinition(
     name: "get_connection_status",
     permission: "diagnosis:read_connection",
     timeoutMs: 2_000,
+    maxAttempts: 2,
     maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: ConnectionStatusInputSchema,

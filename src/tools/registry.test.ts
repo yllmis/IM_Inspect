@@ -61,7 +61,7 @@ describe("ToolRegistry", () => {
     const blocked = await registry.execute("execute_shell", {}, ctx);
     expect(blocked).toMatchObject({
       ok: false,
-      error: { code: "invalid_argument" },
+      error: { code: "tool_not_found" },
     });
     expect(ctx.traces[0]).toMatchObject({
       requestId: "req_test",
@@ -219,6 +219,247 @@ describe("ToolRegistry", () => {
       error: { code: "timeout", retryable: true },
       meta: { attempts: 1 },
     });
+  });
+
+  it("retries a transient read failure once with deterministic exponential backoff", async () => {
+    const connector = new FakeConnector("delivered");
+    const successfulLookup = connector.getMessageStatus.bind(connector);
+    let attempts = 0;
+    let clock = 0;
+    const delays: number[] = [];
+    connector.getMessageStatus = async (input) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          ok: false,
+          source: "temporary_dependency",
+          error: {
+            code: "dependency_unavailable",
+            message: "temporary network failure",
+            retryable: true,
+          },
+        };
+      }
+      return successfulLookup(input);
+    };
+    const ctx = context({ deadline: 1_000 });
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+      now: () => clock,
+      sleep: async (delayMs) => {
+        delays.push(delayMs);
+        clock += delayMs;
+      },
+    }).execute("get_message_status", { messageId: "msg_delivered" }, ctx);
+
+    expect(result).toMatchObject({
+      ok: true,
+      meta: {
+        attempts: 2,
+        retryDelaysMs: [100],
+        cached: false,
+      },
+    });
+    expect(delays).toEqual([100]);
+    expect(ctx.traces[0]).toMatchObject({
+      attempts: 2,
+      retryDelaysMs: [100],
+    });
+  });
+
+  it("honors a bounded retryAfterMs for connector rate limiting", async () => {
+    const connector = new FakeConnector("delivered");
+    const successfulLookup = connector.getMessageStatus.bind(connector);
+    let attempts = 0;
+    let clock = 0;
+    const delays: number[] = [];
+    connector.getMessageStatus = async (input) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          ok: false,
+          source: "limited_dependency",
+          error: {
+            code: "rate_limited",
+            message: "retry later",
+            retryable: true,
+            details: { retryAfterMs: 250 },
+          },
+        };
+      }
+      return successfulLookup(input);
+    };
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+      now: () => clock,
+      sleep: async (delayMs) => {
+        delays.push(delayMs);
+        clock += delayMs;
+      },
+    }).execute(
+      "get_message_status",
+      { messageId: "msg_delivered" },
+      context({ deadline: 1_000 }),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      meta: { attempts: 2, retryDelaysMs: [250] },
+    });
+    expect(delays).toEqual([250]);
+  });
+
+  it("does not retry early when retryAfterMs exceeds the safe waiting limit", async () => {
+    const connector = new FakeConnector("delivered");
+    let attempts = 0;
+    connector.getMessageStatus = async () => {
+      attempts += 1;
+      return {
+        ok: false,
+        source: "limited_dependency",
+        error: {
+          code: "rate_limited",
+          message: "retry later",
+          retryable: true,
+          details: { retryAfterMs: 1_500 },
+        },
+      };
+    };
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+      sleep: async () => {
+        throw new Error("must not wait");
+      },
+    }).execute("get_message_status", { messageId: "msg_delivered" }, context());
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "rate_limited",
+        details: { retryAfterMs: 1_500 },
+      },
+      meta: { attempts: 1, retryDelaysMs: [] },
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("does not start a retry when backoff would exhaust the run deadline", async () => {
+    const connector = new FakeConnector("delivered");
+    let attempts = 0;
+    connector.getMessageStatus = async () => {
+      attempts += 1;
+      return {
+        ok: false,
+        source: "temporary_dependency",
+        error: {
+          code: "dependency_unavailable",
+          message: "temporary network failure",
+          retryable: true,
+        },
+      };
+    };
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+      now: () => 0,
+      sleep: async () => {
+        throw new Error("must not wait");
+      },
+    }).execute(
+      "get_message_status",
+      { messageId: "msg_delivered" },
+      context({ deadline: 100 }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "dependency_unavailable" },
+      meta: { attempts: 1, retryDelaysMs: [] },
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("deduplicates successful read calls only within one ToolContext", async () => {
+    const connector = new FakeConnector("delivered");
+    const registry = new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    });
+    const ctx = context();
+    const args = { messageId: "msg_delivered" };
+    const first = await registry.execute("get_message_status", args, ctx);
+    const second = await registry.execute("get_message_status", args, ctx);
+
+    expect(first).toMatchObject({ ok: true, meta: { cached: false } });
+    expect(second).toMatchObject({
+      ok: true,
+      meta: { attempts: 0, cached: true, retryDelaysMs: [] },
+    });
+    expect(
+      connector.calls.filter((call) => call.operation === "getMessageStatus"),
+    ).toHaveLength(1);
+    expect(ctx.callsUsed).toBe(2);
+    expect(ctx.traces.map((trace) => trace.outcome)).toEqual([
+      "success",
+      "cached",
+    ]);
+
+    const otherContext = context({ requestId: "req_other" });
+    const third = await registry.execute(
+      "get_message_status",
+      args,
+      otherContext,
+    );
+    expect(third).toMatchObject({ ok: true, meta: { cached: false } });
+    expect(
+      connector.calls.filter((call) => call.operation === "getMessageStatus"),
+    ).toHaveLength(2);
+  });
+
+  it("does not cache a failed read invocation", async () => {
+    const connector = new FakeConnector("delivered");
+    const successfulLookup = connector.getMessageStatus.bind(connector);
+    let calls = 0;
+    connector.getMessageStatus = async (input) => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: false,
+          source: "temporary_dependency",
+          error: {
+            code: "dependency_unavailable",
+            message: "not retryable in this fixture",
+            retryable: false,
+          },
+        };
+      }
+      return successfulLookup(input);
+    };
+    const registry = new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    });
+    const ctx = context();
+    const first = await registry.execute(
+      "get_message_status",
+      { messageId: "msg_delivered" },
+      ctx,
+    );
+    const second = await registry.execute(
+      "get_message_status",
+      { messageId: "msg_delivered" },
+      ctx,
+    );
+
+    expect(first).toMatchObject({
+      ok: false,
+      error: { code: "dependency_unavailable" },
+    });
+    expect(second).toMatchObject({ ok: true, meta: { cached: false } });
+    expect(calls).toBe(2);
   });
 
   it("marks responses truncated when delivery results exceed the limit", async () => {

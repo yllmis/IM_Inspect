@@ -24,6 +24,7 @@ export function getMessageStatusDefinition(
     name: "get_message_status",
     permission: "diagnosis:read",
     timeoutMs: 2_000,
+    maxAttempts: 2,
     maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: MessageLookupInputSchema,

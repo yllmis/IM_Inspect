@@ -58,6 +58,8 @@ export function createEscalationDraftDefinition(
     name: "create_escalation_draft",
     permission: "escalation:draft:create",
     timeoutMs: 3_000,
+    // 写操作依赖 Repository 幂等，但第一版仍不自动重试，避免未知提交结果被重复执行。
+    maxAttempts: 1,
     maxOutputBytes: 128_000,
     readOnly: false,
     inputSchema: CreateEscalationDraftInputSchema,

@@ -41,6 +41,8 @@ function success(data: unknown, truncated = false): ToolResponse<unknown> {
       runId: "run_001",
       durationMs: 10,
       attempts: 1,
+      retryDelaysMs: [],
+      cached: false,
       truncated,
     },
   };
@@ -60,6 +62,8 @@ function timeout(): ToolResponse<unknown> {
       runId: "run_001",
       durationMs: 2_000,
       attempts: 2,
+      retryDelaysMs: [100],
+      cached: false,
       truncated: false,
     },
   };

@@ -49,8 +49,11 @@ submit_incident
   "data": {},
   "meta": {
     "requestId": "req_001",
+    "runId": "run_001",
     "durationMs": 35,
     "attempts": 1,
+    "retryDelaysMs": [],
+    "cached": false,
     "truncated": false
   }
 }
@@ -81,12 +84,13 @@ submit_incident
 | 错误码 | 含义 | 默认可重试 |
 | --- | --- | --- |
 | `invalid_argument` | Schema、字段格式或字段组合不合法 | 否 |
+| `tool_not_found` | 工具未注册或不在服务端白名单内 | 否，拒绝并停止该操作 |
 | `permission_denied` | 调用方无工具权限或无权访问对象 | 否 |
 | `not_found` | 已确认唯一查询条件下对象不存在 | 否 |
 | `ambiguous_match` | 存在多个候选，不能自动选择 | 否 |
 | `unsupported_capability` | Connector 不提供所需事实 | 否 |
 | `conflicting_evidence` | 数据源返回无法自动裁决的冲突证据 | 否 |
-| `rate_limited` | 超过单次、单轮或租户调用限制 | 是，遵守 `retryAfterMs` |
+| `rate_limited` | 下游限流，或本次 Run 已超过调用限制 | 下游限流可按 `retryAfterMs` 重试；本地调用上限不可重试 |
 | `dependency_unavailable` | 下游 IM/API 暂时不可用 | 是，仅只读工具 |
 | `timeout` | 工具超过声明的超时 | 是，仅只读工具 |
 | `confirmation_required` | 写操作缺少有效人工确认 | 否 |
@@ -105,6 +109,30 @@ submit_incident
 - 数量限制必须传入 Connector 并在数据源查询时执行；Tool 层仍需二次校验，禁止先读取无限结果再仅在模型前裁剪。
 - Trace 按工具白名单生成参数和结果摘要；未分类异常、SQL、堆栈和原始日志不得进入 Tool 响应或 Trace。
 - 原始记录只使用有界、不可执行的 `Evidence.id/source` 或 `sourceReference` 引用，模型不接收数据库行或日志正文。
+
+### 1.6 工具可靠性执行策略
+
+第一版采用同步的 `ToolRegistry` 作为统一可靠性执行边界。每个工具只声明权限、超时、最大尝试次数、返回上限和读写属性；参数校验、调用预算、重试、退避、Run 内去重、错误摘要与 Trace 由 Registry 统一执行，模型不能改变这些策略。
+
+```text
+校验白名单、权限和参数
+  -> 检查 Run deadline 与调用次数
+  -> 查询本次 ToolContext 的成功结果缓存
+  -> 调用 Tool / Connector
+  -> 按错误类型决定是否有限重试
+  -> 校验返回大小并记录结构化 Trace
+```
+
+- 只读工具最多执行 2 次，即首次调用加 1 次重试；写工具第一版只执行 1 次。
+- `dependency_unavailable` 和 `timeout` 使用确定性指数退避，第一次重试等待 100ms；第一版不使用随机 jitter，保证测试可重复。
+- `rate_limited` 只有携带受信任、合法且未超过 1000ms 的 `retryAfterMs` 时才能重试。若要求等待时间超出安全上限或 Run 剩余时间不足，则保持限流错误，不提前重试。
+- 每次等待前必须满足 `now + delay < deadline`；工具级超时和 Agent Run 总 deadline 同时生效。
+- `callsUsed` 统计模型发起的逻辑工具调用；`attempts` 统计真正访问 Connector 的次数，缓存命中为 0 次实际尝试。
+- 只在同一个 `ToolContext`（一次 Agent Run）内按“工具名 + Zod 规范化参数”复用成功的只读结果。失败不缓存，不跨 Run 复用实时状态，写操作继续依赖 Repository 幂等。
+- 成功空结果仍是 `ok: true`；超时、权限不足和依赖故障是 `ok: false`，不得转换成“消息不存在”等诊断事实。
+- Trace 记录 `attempts`、`retryDelaysMs`、`cached`、脱敏参数和结果摘要，不记录原始日志、凭证或消息正文。
+
+方案 C（队列和 Worker）仅作为后续长任务扩展，用于超出 HTTP 生命周期、需要崩溃恢复或批量取证的任务。同步诊断查询仍走 `ToolRegistry -> Connector`；即使将来引入 Worker，Worker 内部仍复用本节的可靠性执行边界，而不是由队列替代参数校验、权限或重试判断。
 
 ## 2. 契约总览
 

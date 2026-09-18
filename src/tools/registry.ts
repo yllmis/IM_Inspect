@@ -22,6 +22,7 @@ import { findUserOrMessageDefinition } from "./find-user-or-message";
 import { getConnectionStatusDefinition } from "./get-connection-status";
 import { getDeliveryEventsDefinition } from "./get-delivery-events";
 import { getMessageStatusDefinition } from "./get-message-status";
+import { RetryPolicy, resolveRetryPolicy, retryDelayMs } from "./retry-policy";
 
 export const TOOL_NAMES = [
   "find_user_or_message",
@@ -36,6 +37,7 @@ export interface ToolDefinition {
   readonly name: ToolName;
   readonly permission: string;
   readonly timeoutMs: number;
+  readonly maxAttempts: number;
   readonly maxOutputBytes: number;
   readonly readOnly: boolean;
   readonly inputSchema: z.ZodTypeAny;
@@ -47,12 +49,16 @@ export interface ToolRegistryDependencies {
   draftRepository: import("./draft-repository").DraftRepository;
   confirmationVerifier?: import("./confirmation-verifier").ConfirmationVerifier;
   now?: () => number;
+  sleep?: (delayMs: number) => Promise<void>;
+  retryPolicy?: Partial<RetryPolicy>;
 }
 
 export class ToolRegistry {
   private readonly definitions: ReadonlyMap<string, ToolDefinition>;
   private readonly connectorCapabilities: ConnectorCapabilities;
   private readonly now: () => number;
+  private readonly sleep: (delayMs: number) => Promise<void>;
+  private readonly retryPolicy: RetryPolicy;
 
   constructor(dependencies: ToolRegistryDependencies) {
     const draftRepository = dependencies.draftRepository;
@@ -72,6 +78,13 @@ export class ToolRegistry {
       dependencies.connector.getCapabilities(),
     );
     this.now = dependencies.now ?? Date.now;
+    this.sleep =
+      dependencies.sleep ??
+      ((delayMs) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, delayMs);
+        }));
+    this.retryPolicy = resolveRetryPolicy(dependencies.retryPolicy);
   }
 
   getConnectorCapabilities(): ConnectorCapabilities {
@@ -90,7 +103,7 @@ export class ToolRegistry {
         context,
         startedAt,
         name,
-        "invalid_argument",
+        "tool_not_found",
         `tool is not allowlisted: ${name}`,
         false,
         { tool: name },
@@ -116,7 +129,7 @@ export class ToolRegistry {
         name,
         "rate_limited",
         "tool call limit exceeded",
-        true,
+        false,
         { maxCalls: context.maxCalls },
         "blocked",
       );
@@ -151,8 +164,17 @@ export class ToolRegistry {
     }
 
     context.callsUsed += 1;
+    const cacheKey = definition.readOnly
+      ? invocationCacheKey(definition.name, args)
+      : null;
+    const cached = cacheKey ? context.resultCache.get(cacheKey) : undefined;
+    if (cached) {
+      return this.cached<T>(context, startedAt, definition.name, args, cached);
+    }
+
     let attempts = 0;
-    while (attempts < (definition.readOnly ? 2 : 1)) {
+    const retryDelaysMs: number[] = [];
+    while (attempts < definition.maxAttempts) {
       attempts += 1;
       try {
         const data = await this.withTimeout(
@@ -163,24 +185,36 @@ export class ToolRegistry {
           ),
         );
         enforceOutputSize(data, definition.maxOutputBytes);
-        return this.success<T>(
+        const response = this.success<T>(
           context,
           startedAt,
           name,
           args,
           attempts,
+          retryDelaysMs,
           data as T,
         );
+        if (cacheKey) {
+          context.resultCache.set(
+            cacheKey,
+            structuredClone(response) as ToolSuccess<unknown>,
+          );
+        }
+        return response;
       } catch (error) {
         const normalized = normalizeError(error);
+        const delayMs = definition.readOnly
+          ? retryDelayMs(normalized, attempts, this.retryPolicy)
+          : null;
         const canRetry =
-          definition.readOnly &&
-          attempts < 2 &&
-          ["dependency_unavailable", "timeout", "rate_limited"].includes(
-            normalized.code,
-          ) &&
-          this.now() < context.deadline;
-        if (canRetry) continue;
+          attempts < definition.maxAttempts &&
+          delayMs !== null &&
+          this.now() + delayMs < context.deadline;
+        if (canRetry) {
+          retryDelaysMs.push(delayMs);
+          await this.sleep(delayMs);
+          continue;
+        }
         return this.failure(
           context,
           startedAt,
@@ -192,6 +226,7 @@ export class ToolRegistry {
           "error",
           attempts,
           args,
+          retryDelaysMs,
         );
       }
     }
@@ -206,6 +241,7 @@ export class ToolRegistry {
       "error",
       attempts,
       args,
+      retryDelaysMs,
     );
   }
 
@@ -236,10 +272,18 @@ export class ToolRegistry {
     toolName: string,
     args: unknown,
     attempts: number,
+    retryDelaysMs: number[],
     data: T,
   ): ToolSuccess<T> {
     const truncated = isTruncated(data);
-    const meta = this.meta(context, startedAt, attempts, truncated);
+    const meta = this.meta(
+      context,
+      startedAt,
+      attempts,
+      retryDelaysMs,
+      false,
+      truncated,
+    );
     this.trace(context, {
       requestId: context.requestId,
       runId: context.runId,
@@ -249,6 +293,8 @@ export class ToolRegistry {
       resultSummary: summarizeResult(toolName, data),
       durationMs: meta.durationMs,
       attempts,
+      retryDelaysMs,
+      cached: false,
       truncated: meta.truncated,
     });
     return { ok: true, data, meta };
@@ -265,8 +311,16 @@ export class ToolRegistry {
     outcome: ToolTrace["outcome"] = "error",
     attempts = 1,
     args: unknown = {},
+    retryDelaysMs: number[] = [],
   ): ToolFailure {
-    const meta = this.meta(context, startedAt, attempts, false);
+    const meta = this.meta(
+      context,
+      startedAt,
+      attempts,
+      retryDelaysMs,
+      false,
+      false,
+    );
     const safeDetails = summarizeErrorDetails(code, details);
     const error: ToolError = {
       code,
@@ -284,6 +338,8 @@ export class ToolRegistry {
       resultSummary: safeDetails,
       durationMs: meta.durationMs,
       attempts,
+      retryDelaysMs,
+      cached: false,
       truncated: meta.truncated,
     });
     return { ok: false, error, meta };
@@ -293,6 +349,8 @@ export class ToolRegistry {
     context: ToolContext,
     startedAt: number,
     attempts: number,
+    retryDelaysMs: number[],
+    cached: boolean,
     truncated: boolean,
   ) {
     return {
@@ -300,8 +358,43 @@ export class ToolRegistry {
       runId: context.runId,
       durationMs: Math.max(0, this.now() - startedAt),
       attempts,
+      retryDelaysMs: [...retryDelaysMs],
+      cached,
       truncated,
     };
+  }
+
+  /** 缓存命中仍生成独立 Trace，但 attempts=0，明确表示没有访问 Connector。 */
+  private cached<T>(
+    context: ToolContext,
+    startedAt: number,
+    toolName: string,
+    args: unknown,
+    cached: ToolSuccess<unknown>,
+  ): ToolSuccess<T> {
+    const data = structuredClone(cached.data) as T;
+    const meta = this.meta(
+      context,
+      startedAt,
+      0,
+      [],
+      true,
+      cached.meta.truncated,
+    );
+    this.trace(context, {
+      requestId: context.requestId,
+      runId: context.runId,
+      toolName,
+      args: summarizeArgs(toolName, args),
+      outcome: "cached",
+      resultSummary: summarizeResult(toolName, data),
+      durationMs: meta.durationMs,
+      attempts: 0,
+      retryDelaysMs: [],
+      cached: true,
+      truncated: meta.truncated,
+    });
+    return { ok: true, data, meta };
   }
 
   private trace(context: ToolContext, trace: ToolTrace) {
@@ -456,9 +549,15 @@ function summarizeErrorDetails(
         ? { permission: details.permission.slice(0, 128) }
         : undefined;
     case "rate_limited":
-      return typeof details.maxCalls === "number"
-        ? { maxCalls: details.maxCalls }
-        : undefined;
+      return {
+        ...(typeof details.maxCalls === "number"
+          ? { maxCalls: details.maxCalls }
+          : {}),
+        ...(Number.isSafeInteger(details.retryAfterMs) &&
+        (details.retryAfterMs as number) > 0
+          ? { retryAfterMs: details.retryAfterMs }
+          : {}),
+      };
     case "invalid_argument":
       return Array.isArray(details.issues)
         ? { issueCount: details.issues.length }
@@ -480,12 +579,13 @@ function summarizeErrorDetails(
 function publicErrorMessage(code: ToolErrorCode): string {
   const messages: Record<ToolErrorCode, string> = {
     invalid_argument: "tool arguments are invalid",
+    tool_not_found: "the requested tool is not allowlisted",
     permission_denied: "tool permission was denied",
     not_found: "the requested record was not found",
     ambiguous_match: "the query matched multiple records",
     unsupported_capability: "the connector capability is not supported",
     conflicting_evidence: "the tool result conflicts with current evidence",
-    rate_limited: "tool call limit was exceeded",
+    rate_limited: "the tool rate limit was reached",
     timeout: "tool execution timed out",
     dependency_unavailable: "tool dependency is unavailable",
     confirmation_required: "human confirmation is required",
@@ -520,6 +620,23 @@ function enforceOutputSize(value: unknown, maxOutputBytes: number): void {
       { maxOutputBytes },
     );
   }
+}
+
+function invocationCacheKey(toolName: string, args: unknown): string {
+  return `${toolName}:${stableSerialize(args)}`;
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 function normalizeError(error: unknown): ToolServiceError {

@@ -62,7 +62,9 @@ const ToolResponseMetaSchema = z
     requestId: z.string().min(1).max(128),
     runId: z.string().min(1).max(128),
     durationMs: z.number().int().nonnegative(),
-    attempts: z.number().int().positive(),
+    attempts: z.number().int().nonnegative(),
+    retryDelaysMs: z.array(z.number().int().nonnegative()).max(10).default([]),
+    cached: z.boolean().default(false),
     truncated: z.boolean(),
   })
   .strict();

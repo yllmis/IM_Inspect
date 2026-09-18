@@ -11,11 +11,14 @@ export const ToolTraceSchema = z
     runId: z.string().min(1).max(128),
     toolName: z.string().min(1).max(128),
     args: z.record(z.unknown()),
-    outcome: z.enum(["success", "error", "blocked"]),
+    outcome: z.enum(["success", "error", "blocked", "cached"]),
     errorCode: z.string().optional(),
     resultSummary: z.record(z.unknown()).optional(),
     durationMs: z.number().int().nonnegative(),
-    attempts: z.number().int().positive(),
+    // attempts 只计算真正访问 Connector 的次数；缓存命中没有下游调用，所以是 0。
+    attempts: z.number().int().nonnegative(),
+    retryDelaysMs: z.array(z.number().int().nonnegative()).max(10),
+    cached: z.boolean(),
     truncated: z.boolean(),
   })
   .strict();
@@ -30,6 +33,8 @@ export interface ToolContext {
   readonly deadline: number;
   readonly maxCalls: number;
   readonly traces: ToolTrace[];
+  /** Run-local dedup cache：只复用本次 Agent Run 中成功的只读工具结果。 */
+  readonly resultCache: Map<string, ToolSuccess<unknown>>;
   readonly confirmationToken?: string;
   callsUsed: number;
 }
@@ -39,6 +44,8 @@ export interface ToolResponseMeta {
   runId: string;
   durationMs: number;
   attempts: number;
+  retryDelaysMs: number[];
+  cached: boolean;
   truncated: boolean;
 }
 
@@ -95,6 +102,7 @@ export function createToolContext(input: {
     deadline: input.deadline ?? now + 10_000,
     maxCalls: input.maxCalls ?? 6,
     traces: [],
+    resultCache: new Map(),
     confirmationToken: input.confirmationToken,
     callsUsed: 0,
   };

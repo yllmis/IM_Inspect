@@ -56,6 +56,7 @@ export function getDeliveryEventsDefinition(
     name: "get_delivery_events",
     permission: "diagnosis:read_delivery",
     timeoutMs: 3_000,
+    maxAttempts: 2,
     maxOutputBytes: 256_000,
     readOnly: true,
     inputSchema: DeliveryEventsInputSchema,
