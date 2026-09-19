@@ -6,7 +6,11 @@ import { DeliveryFact, DeliveryFactSchema } from "../domain/delivery";
 import { ToolError } from "../domain/errors";
 import { Evidence, EvidenceSchema } from "../domain/evidence";
 import { MessageFact, MessageFactSchema } from "../domain/message";
-import { ToolServiceError } from "./context";
+import {
+  connectorRequestContext,
+  ToolContext,
+  ToolServiceError,
+} from "./context";
 
 export function requireCapability(
   connector: { getCapabilities(): Record<string, string> },
@@ -20,6 +24,10 @@ export function requireCapability(
       { capability },
     );
   }
+}
+
+export function connectorContext(context: ToolContext) {
+  return connectorRequestContext(context);
 }
 
 export function unwrapConnector<T>(result: ConnectorResult<T>): T {

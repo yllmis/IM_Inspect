@@ -16,7 +16,7 @@ const permissions = [
   "diagnosis:read_delivery",
   "diagnosis:read_connection",
   "escalation:draft:create",
-];
+] as const;
 
 const repository = () => createInMemoryDraftRepository();
 
@@ -127,8 +127,9 @@ describe("ToolRegistry", () => {
 
   it("maps a successful message query through the Connector", async () => {
     const ctx = context();
+    const connector = new FakeConnector("delivered");
     const result = await new ToolRegistry({
-      connector: new FakeConnector("delivered"),
+      connector,
       draftRepository: repository(),
     }).execute("get_message_status", { messageId: "msg_delivered" }, ctx);
     expect(result).toMatchObject({
@@ -139,6 +140,12 @@ describe("ToolRegistry", () => {
     expect(ctx.traces[0]?.outcome).toBe("success");
     expect(ctx.traces[0]?.resultSummary).toMatchObject({
       message: { messageId: "msg_delivered", persisted: true },
+    });
+    expect(connector.calls[0]?.requestContext).toEqual({
+      tenantId: "tenant_test",
+      actorId: "support_test",
+      requestId: "req_test",
+      runId: "run_test",
     });
   });
 

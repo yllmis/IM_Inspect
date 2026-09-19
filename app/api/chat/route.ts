@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { z } from "zod";
 
 import { runAgent } from "../../../src/agent/agent";
+import { ChatRequestSchema } from "../../../src/agent/chat-request";
 import { ContextBudgetExceededError } from "../../../src/agent/context-budget";
-import { TargetSwitchDecisionSchema } from "../../../src/agent/session-state";
 import { TargetSwitchResolutionError } from "../../../src/agent/state-merge";
 import { StateStoreError } from "../../../src/agent/state-store";
-import { IdentifierSchema } from "../../../src/connectors/connector";
 import { FakeConnector } from "../../../src/connectors/fake/fake-connector";
 import {
   createMySqlPool,
@@ -19,14 +17,6 @@ import { createToolContext } from "../../../src/tools/context";
 import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
 import { ToolRegistry } from "../../../src/tools/registry";
 
-const RequestSchema = z
-  .object({
-    sessionId: IdentifierSchema.optional(),
-    text: z.string().trim().min(1).max(20_000),
-    action: TargetSwitchDecisionSchema.optional(),
-  })
-  .strict();
-
 let stateStore: MySqlStateStore | undefined;
 const registry = new ToolRegistry({
   connector: new FakeConnector("delivered"),
@@ -34,7 +24,7 @@ const registry = new ToolRegistry({
 });
 
 export async function POST(request: Request) {
-  const parsed = RequestSchema.safeParse(
+  const parsed = ChatRequestSchema.safeParse(
     await request.json().catch(() => undefined),
   );
   if (!parsed.success)

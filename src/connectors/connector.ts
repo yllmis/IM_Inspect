@@ -10,6 +10,7 @@ import {
 } from "../domain/errors";
 import { EvidenceSchema } from "../domain/evidence";
 import { MessageFact, MessageFactSchema } from "../domain/message";
+import type { ConnectorRequestContext } from "../tools/context";
 
 export const IdentifierSchema = z
   .string()
@@ -177,15 +178,19 @@ export interface Connector {
   getCapabilities(): ConnectorCapabilities;
   findUserOrMessage(
     input: FindUserOrMessageInput,
+    context: ConnectorRequestContext,
   ): Promise<ConnectorResult<FindUserOrMessageResult>>;
   getMessageStatus(
     input: MessageLookupInput,
+    context: ConnectorRequestContext,
   ): Promise<ConnectorResult<MessageFact>>;
   getDeliveryEvents(
     input: DeliveryEventsInput,
+    context: ConnectorRequestContext,
   ): Promise<ConnectorResult<DeliveryEventsPage>>;
   getConnectionStatus(
     input: ConnectionStatusInput,
+    context: ConnectorRequestContext,
   ): Promise<ConnectorResult<ConnectionFact>>;
 }
 

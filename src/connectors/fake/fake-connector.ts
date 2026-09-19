@@ -12,6 +12,7 @@ import {
   MessageLookupInput,
   MessageLookupInputSchema,
 } from "../connector";
+import type { ConnectorRequestContext } from "../../tools/context";
 import {
   ConnectorCapabilities,
   ConnectorCapabilityStatus,
@@ -31,6 +32,7 @@ export type FakeConnectorOperation =
 export interface FakeConnectorCall {
   operation: FakeConnectorOperation;
   input: unknown;
+  requestContext?: ConnectorRequestContext;
 }
 
 const capabilityByOperation: Record<
@@ -53,9 +55,14 @@ export class FakeConnector implements Connector {
 
   async findUserOrMessage(
     input: FindUserOrMessageInput,
+    requestContext?: ConnectorRequestContext,
   ): Promise<ConnectorResult<FindUserOrMessageResult>> {
     const parsed = FindUserOrMessageInputSchema.parse(input);
-    this.calls.push({ operation: "findUserOrMessage", input: parsed });
+    this.calls.push({
+      operation: "findUserOrMessage",
+      input: parsed,
+      requestContext,
+    });
     const behavior = this.fixture.behavior.getMessageStatus;
     if (behavior.kind === "unsupported") {
       return this.failure(
@@ -117,9 +124,14 @@ export class FakeConnector implements Connector {
 
   async getMessageStatus(
     input: MessageLookupInput,
+    requestContext?: ConnectorRequestContext,
   ): Promise<ConnectorResult<MessageFact>> {
     const parsed = MessageLookupInputSchema.parse(input);
-    this.calls.push({ operation: "getMessageStatus", input: parsed });
+    this.calls.push({
+      operation: "getMessageStatus",
+      input: parsed,
+      requestContext,
+    });
     if (parsed.messageId !== this.fixture.message.messageId) {
       return this.failure(
         "getMessageStatus",
@@ -133,9 +145,14 @@ export class FakeConnector implements Connector {
 
   async getDeliveryEvents(
     input: DeliveryEventsInput,
+    requestContext?: ConnectorRequestContext,
   ): Promise<ConnectorResult<DeliveryEventsPage>> {
     const parsed = DeliveryEventsInputSchema.parse(input);
-    this.calls.push({ operation: "getDeliveryEvents", input: parsed });
+    this.calls.push({
+      operation: "getDeliveryEvents",
+      input: parsed,
+      requestContext,
+    });
     if (parsed.messageId !== this.fixture.message.messageId) {
       return this.failure(
         "getDeliveryEvents",
@@ -165,9 +182,14 @@ export class FakeConnector implements Connector {
 
   async getConnectionStatus(
     input: ConnectionStatusInput,
+    requestContext?: ConnectorRequestContext,
   ): Promise<ConnectorResult<ConnectionFact>> {
     const parsed = ConnectionStatusInputSchema.parse(input);
-    this.calls.push({ operation: "getConnectionStatus", input: parsed });
+    this.calls.push({
+      operation: "getConnectionStatus",
+      input: parsed,
+      requestContext,
+    });
     const behavior = this.fixture.behavior.getConnectionStatus;
     if (behavior.kind !== "success") {
       return this.respond<ConnectionFact>(

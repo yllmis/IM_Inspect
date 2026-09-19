@@ -7,6 +7,7 @@ import {
   parseResult,
   requireCapability,
   sanitizeMessageFact,
+  connectorContext,
   unwrapConnector,
 } from "./handler-utils";
 
@@ -28,10 +29,13 @@ export function getMessageStatusDefinition(
     maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: MessageLookupInputSchema,
-    async run(args) {
+    async run(args, context) {
       requireCapability(connector, "messageLookup");
       const message = unwrapConnector(
-        await connector.getMessageStatus(MessageLookupInputSchema.parse(args)),
+        await connector.getMessageStatus(
+          MessageLookupInputSchema.parse(args),
+          connectorContext(context),
+        ),
       );
       return parseResult(GetMessageStatusResultSchema, {
         message: sanitizeMessageFact(message),

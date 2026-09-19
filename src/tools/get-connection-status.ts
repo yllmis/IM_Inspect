@@ -11,6 +11,7 @@ import {
   requireCapability,
   sanitizeConnectionFact,
   unwrapConnector,
+  connectorContext,
 } from "./handler-utils";
 
 export const GetConnectionStatusResultSchema = z
@@ -31,11 +32,12 @@ export function getConnectionStatusDefinition(
     maxOutputBytes: 32_000,
     readOnly: true,
     inputSchema: ConnectionStatusInputSchema,
-    async run(args) {
+    async run(args, context) {
       requireCapability(connector, "historicalPresence");
       const connection = unwrapConnector(
         await connector.getConnectionStatus(
           ConnectionStatusInputSchema.parse(args),
+          connectorContext(context),
         ),
       );
       return parseResult(GetConnectionStatusResultSchema, {

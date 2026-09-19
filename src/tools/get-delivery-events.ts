@@ -14,6 +14,7 @@ import {
   requireCapability,
   sanitizeDeliveryFact,
   unwrapConnectorWithSource,
+  connectorContext,
 } from "./handler-utils";
 
 export const GetDeliveryEventsResultSchema = z
@@ -60,11 +61,11 @@ export function getDeliveryEventsDefinition(
     maxOutputBytes: 256_000,
     readOnly: true,
     inputSchema: DeliveryEventsInputSchema,
-    async run(args) {
+    async run(args, context) {
       const input = DeliveryEventsInputSchema.parse(args);
       requireCapability(connector, "deliveryEvents");
       const connectorResult = unwrapConnectorWithSource(
-        await connector.getDeliveryEvents(input),
+        await connector.getDeliveryEvents(input, connectorContext(context)),
       );
       const page = DeliveryEventsPageSchema.parse(connectorResult.data);
       const boundedEvents = page.events

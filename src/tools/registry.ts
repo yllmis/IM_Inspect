@@ -8,6 +8,7 @@ import {
   ToolErrorCode,
 } from "../domain/errors";
 import {
+  Permission,
   ToolContext,
   ToolFailure,
   ToolResponse,
@@ -35,7 +36,7 @@ export type ToolName = (typeof TOOL_NAMES)[number];
 
 export interface ToolDefinition {
   readonly name: ToolName;
-  readonly permission: string;
+  readonly permission: Permission;
   readonly timeoutMs: number;
   readonly maxAttempts: number;
   readonly maxOutputBytes: number;

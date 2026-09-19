@@ -8,6 +8,7 @@ import {
   parseResult,
   requireCapability,
   sanitizeEvidence,
+  connectorContext,
   unwrapConnector,
 } from "./handler-utils";
 
@@ -22,12 +23,14 @@ export function findUserOrMessageDefinition(
     maxOutputBytes: 64_000,
     readOnly: true,
     inputSchema: FindUserOrMessageInputSchema,
-    async run(args) {
+    async run(args, context) {
       const input = FindUserOrMessageInputSchema.parse(args);
       requireCapability(connector, "messageLookup");
       const result = parseResult(
         FindUserOrMessageResultSchema,
-        unwrapConnector(await connector.findUserOrMessage(input)),
+        unwrapConnector(
+          await connector.findUserOrMessage(input, connectorContext(context)),
+        ),
       );
       const matches = result.matches.slice(0, input.limit).map((match) => ({
         entityType: match.entityType,

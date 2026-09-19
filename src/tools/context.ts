@@ -1,9 +1,28 @@
 import { z } from "zod";
 
+import { IdentifierSchema } from "../connectors/connector";
 import { ToolError, ToolErrorCode } from "../domain/errors";
 
-export const PermissionSchema = z.string().min(1).max(128);
+// 权限是服务端认证主体的属性，不接受模型或客服文本动态创建权限。
+export const PermissionSchema = z.enum([
+  "diagnosis:read",
+  "diagnosis:read_delivery",
+  "diagnosis:read_connection",
+  "escalation:draft:create",
+]);
 export type Permission = z.infer<typeof PermissionSchema>;
+
+export const ConnectorRequestContextSchema = z
+  .object({
+    tenantId: IdentifierSchema,
+    actorId: IdentifierSchema,
+    requestId: IdentifierSchema,
+    runId: IdentifierSchema,
+  })
+  .strict();
+export type ConnectorRequestContext = z.infer<
+  typeof ConnectorRequestContextSchema
+>;
 
 export const ToolTraceSchema = z
   .object({
@@ -92,18 +111,80 @@ export function createToolContext(input: {
   maxCalls?: number;
   confirmationToken?: string;
 }): ToolContext {
+  const allowedKeys = new Set([
+    "requestId",
+    "runId",
+    "tenantId",
+    "actorId",
+    "permissions",
+    "deadline",
+    "maxCalls",
+    "confirmationToken",
+  ]);
+  if (
+    Object.keys(input as Record<string, unknown>).some(
+      (key) => !allowedKeys.has(key),
+    )
+  ) {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.unrecognized_keys,
+        keys: Object.keys(input as Record<string, unknown>).filter(
+          (key) => !allowedKeys.has(key),
+        ),
+        path: [],
+        message: "unrecognized server context field",
+      },
+    ]);
+  }
   const now = Date.now();
+  const deadline = input.deadline ?? now + 10_000;
+  const maxCalls = input.maxCalls ?? 6;
+  const parsed = z
+    .object({
+      requestId: IdentifierSchema,
+      runId: IdentifierSchema,
+      tenantId: IdentifierSchema,
+      actorId: IdentifierSchema,
+      permissions: z.array(PermissionSchema).max(4),
+      deadline: z.number().finite().int().positive(),
+      maxCalls: z.number().int().min(1).max(20),
+      confirmationToken: z.string().min(1).max(512).optional(),
+    })
+    .strict()
+    .parse({
+      requestId: input.requestId,
+      runId: input.runId,
+      tenantId: input.tenantId,
+      actorId: input.actorId,
+      permissions: [...new Set(input.permissions)],
+      deadline,
+      maxCalls,
+      confirmationToken: input.confirmationToken,
+    });
   return {
-    requestId: input.requestId,
-    runId: input.runId,
-    tenantId: input.tenantId,
-    actorId: input.actorId,
-    permissions: new Set(input.permissions),
-    deadline: input.deadline ?? now + 10_000,
-    maxCalls: input.maxCalls ?? 6,
+    requestId: parsed.requestId,
+    runId: parsed.runId,
+    tenantId: parsed.tenantId,
+    actorId: parsed.actorId,
+    permissions: new Set(parsed.permissions),
+    deadline: parsed.deadline,
+    maxCalls: parsed.maxCalls,
     traces: [],
     resultCache: new Map(),
-    confirmationToken: input.confirmationToken,
+    confirmationToken: parsed.confirmationToken,
     callsUsed: 0,
   };
+}
+
+/** 只把服务端上下文传给 Connector；模型参数不会进入租户和操作者身份。 */
+export function connectorRequestContext(
+  context: ToolContext,
+): ConnectorRequestContext {
+  return ConnectorRequestContextSchema.parse({
+    tenantId: context.tenantId,
+    actorId: context.actorId,
+    requestId: context.requestId,
+    runId: context.runId,
+  });
 }
