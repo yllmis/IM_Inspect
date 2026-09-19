@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:mysql": "vitest run src/persistence/mysql/mysql-state-store.integration.test.ts",
+    "test:mysql": "vitest run src/persistence/mysql/*.integration.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

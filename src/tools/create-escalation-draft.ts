@@ -16,6 +16,7 @@ export const CreateEscalationDraftInputSchema = z
   .object({
     messageId: IdentifierSchema,
     conversationId: IdentifierSchema.optional(),
+    diagnosisResultId: IdentifierSchema,
     classification: DiagnosisClassificationSchema,
     facts: z.array(z.string().max(500)).max(20),
     evidenceRefs: z.array(z.string().min(1).max(256)).min(1).max(50),
@@ -38,6 +39,7 @@ export function computeDraftContentHash(
   const canonical = JSON.stringify({
     messageId: input.messageId,
     conversationId: input.conversationId ?? null,
+    diagnosisResultId: input.diagnosisResultId,
     classification: input.classification,
     facts: input.facts,
     evidenceRefs: input.evidenceRefs,
@@ -105,6 +107,7 @@ export function createEscalationDraftDefinition(
         tenantId: context.tenantId,
         actorId: context.actorId,
         runId: context.runId,
+        diagnosisResultId: input.diagnosisResultId,
         messageId: input.messageId,
         conversationId: input.conversationId,
         classification: input.classification,

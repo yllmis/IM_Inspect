@@ -6,6 +6,7 @@ export const DraftRecordSchema = z
     tenantId: z.string().min(1).max(128),
     actorId: z.string().min(1).max(128),
     runId: z.string().min(1).max(128),
+    diagnosisResultId: z.string().min(1).max(128),
     messageId: z.string().min(1).max(128),
     conversationId: z.string().min(1).max(128).optional(),
     classification: z.string().min(1).max(64),
@@ -64,7 +65,8 @@ export class MySqlDraftRepository implements DraftRepository {
   ): Promise<DraftRecord | undefined> {
     const [rows] = await this.client.execute<readonly DraftRecord[]>(
       `SELECT draft_id AS draftId, tenant_id AS tenantId, actor_id AS actorId,
-        run_id AS runId, message_id AS messageId, conversation_id AS conversationId,
+        run_id AS runId, diagnosis_result_id AS diagnosisResultId,
+        message_id AS messageId, conversation_id AS conversationId,
         classification, facts_json AS facts,
         evidence_refs_json AS evidenceRefs, possible_causes_json AS possibleCauses,
         missing_information_json AS missingInformation,
@@ -81,7 +83,7 @@ export class MySqlDraftRepository implements DraftRepository {
   async create(draft: DraftRecord): Promise<DraftRecord> {
     await this.client.execute(
       `INSERT INTO agent_drafts
-       (draft_id, tenant_id, actor_id, run_id, message_id, conversation_id, classification,
+       (draft_id, tenant_id, actor_id, run_id, diagnosis_result_id, message_id, conversation_id, classification,
         facts_json, evidence_refs_json, possible_causes_json,
         missing_information_json, unsupported_capabilities_json, summary,
         content_hash, idempotency_key, status, created_at)
@@ -91,6 +93,7 @@ export class MySqlDraftRepository implements DraftRepository {
         draft.tenantId,
         draft.actorId,
         draft.runId,
+        draft.diagnosisResultId,
         draft.messageId,
         draft.conversationId ?? null,
         draft.classification,

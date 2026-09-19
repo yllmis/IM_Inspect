@@ -38,6 +38,7 @@ function draftInput(): Omit<CreateEscalationDraftInput, "contentHash"> & {
 } {
   const base = {
     messageId: "msg_write_failed",
+    diagnosisResultId: "diag_write_failed_001",
     classification: "write_failed" as const,
     facts: ["消息持久化失败"],
     evidenceRefs: ["fixture:write_failed:insert"],
