@@ -235,7 +235,11 @@ export const AgentSessionStateSchema = z
     confirmationState: ConfirmationStateSchema.default({
       status: "not_required",
     }),
+    // diagnosisResultId 标识一份确定性诊断快照；草稿通过它追溯事实和证据来源。
+    diagnosisResultId: IdentifierSchema.nullable().default(null),
     diagnosisResult: DiagnosisResultSchema.nullable().default(null),
+    // lastRunId 由服务端 Agent Run 写入，不能由客服请求指定。
+    lastRunId: IdentifierSchema.nullable().default(null),
     status: AgentSessionStatusSchema.default("received"),
     version: z.number().int().positive().default(1),
     createdAt: z.string().datetime({ offset: true }),

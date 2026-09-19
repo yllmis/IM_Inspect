@@ -122,6 +122,7 @@ export async function runAgent(
   state = AgentSessionStateSchema.parse({
     ...state,
     connectorCapabilities: input.registry.getConnectorCapabilities(),
+    lastRunId: input.toolContext.runId,
   });
   const expectedVersion = state.version;
   const calls: AgentToolCall[] = [];

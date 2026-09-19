@@ -286,6 +286,7 @@ export function resolveTargetSwitch(
     pendingQuestion: null,
     pendingTargetSwitch: null,
     confirmationState: { status: "not_required" },
+    diagnosisResultId: null,
     diagnosisResult: null,
     status: "selecting_tool",
   });
@@ -426,6 +427,7 @@ export function mergeDiagnosisResult(
       : "generating_response";
   const next = AgentSessionStateSchema.parse({
     ...state,
+    diagnosisResultId: diagnosisResultId(state, diagnosis),
     diagnosisResult: diagnosis,
     missingInformation: unique(diagnosis.missingInformation).slice(0, 20),
     unsupportedCapabilities: unique([
@@ -441,6 +443,20 @@ export function mergeDiagnosisResult(
       stableStringify(next.diagnosisResult) !==
         stableStringify(state.diagnosisResult) || next.status !== state.status,
   };
+}
+
+function diagnosisResultId(
+  state: AgentSessionState,
+  diagnosis: DiagnosisResult,
+): string {
+  const snapshot = stableStringify({
+    tenantId: state.tenantId,
+    actorId: state.actorId,
+    sessionId: state.sessionId,
+    issueId: state.currentIssue.issueId,
+    diagnosis,
+  });
+  return `diag_${createHash("sha256").update(snapshot).digest("hex").slice(0, 32)}`;
 }
 
 export function hashToolInput(

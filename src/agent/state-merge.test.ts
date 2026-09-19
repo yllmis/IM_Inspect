@@ -493,6 +493,7 @@ describe("diagnosis state projection", () => {
     const merged = mergeDiagnosisResult(state, diagnosis);
 
     expect(merged.state.diagnosisResult?.classification).toBe("delivered");
+    expect(merged.state.diagnosisResultId).toMatch(/^diag_[a-f0-9]{32}$/);
     expect(merged.state.status).toBe("generating_response");
     expect(merged.state.confirmedFacts).toEqual(state.confirmedFacts);
   });
