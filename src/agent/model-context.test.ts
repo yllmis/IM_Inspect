@@ -81,6 +81,12 @@ describe("buildModelContext", () => {
 
     expect(context).toMatchObject({
       purpose: "extract_context",
+      inputTrust: {
+        customerText: "untrusted_data",
+        currentIssue: "untrusted_data",
+        conversation: "untrusted_data",
+        evidenceEligible: false,
+      },
       currentUserText: "消息 ID 是 msg_delivered",
       candidateContext: { messageId: "msg_delivered" },
     });

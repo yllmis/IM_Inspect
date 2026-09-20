@@ -141,6 +141,14 @@ export const ModelContextSchema = z
   .object({
     purpose: ModelContextPurposeSchema,
     sessionId: z.string(),
+    inputTrust: z
+      .object({
+        customerText: z.literal("untrusted_data"),
+        currentIssue: z.literal("untrusted_data"),
+        conversation: z.literal("untrusted_data"),
+        evidenceEligible: z.literal(false),
+      })
+      .strict(),
     currentIssue: CurrentIssueSchema,
     currentUserText: z.string().min(1).optional(),
     recentConversation: z.array(ConversationEntrySchema).optional(),
@@ -201,6 +209,13 @@ export function buildModelContext(
   const context: ModelContext = {
     purpose,
     sessionId: state.sessionId,
+    // 结构化信任标签比只写 Prompt 更明确：这些文本只能用于提取线索，不能升级为事实。
+    inputTrust: {
+      customerText: "untrusted_data",
+      currentIssue: "untrusted_data",
+      conversation: "untrusted_data",
+      evidenceEligible: false,
+    },
     currentIssue: {
       ...state.currentIssue,
       summary: issueSummary,

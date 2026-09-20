@@ -59,7 +59,7 @@ describe("ToolRegistry", () => {
       connector: new FakeConnector("delivered"),
       draftRepository: repository(),
     });
-    const blocked = await registry.execute("execute_shell", {}, ctx);
+    const blocked = await registry.execute("resend_message", {}, ctx);
     expect(blocked).toMatchObject({
       ok: false,
       error: { code: "tool_not_found" },
@@ -67,9 +67,11 @@ describe("ToolRegistry", () => {
     expect(ctx.traces[0]).toMatchObject({
       requestId: "req_test",
       runId: "run_test",
-      toolName: "execute_shell",
+      toolName: "resend_message",
       outcome: "blocked",
+      errorCode: "tool_not_found",
     });
+    expect(ctx.callsUsed).toBe(0);
   });
 
   it("rejects invalid arguments and extra fields before Connector access", async () => {
@@ -603,6 +605,32 @@ describe("ToolRegistry", () => {
         historical: true,
       },
     });
+  });
+
+  it("removes injected raw log content before it can become a canonical fact", async () => {
+    const ctx = context();
+    const result = await new ToolRegistry({
+      connector: new FakeConnector("prompt_injection_in_log"),
+      draftRepository: repository(),
+    }).execute(
+      "get_message_status",
+      { messageId: "msg_prompt_injection" },
+      ctx,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        message: {
+          messageId: "msg_prompt_injection",
+          exists: true,
+          persisted: true,
+        },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("rawLog");
+    expect(JSON.stringify(result)).not.toContain("resend_message");
+    expect(JSON.stringify(ctx.traces)).not.toContain("resend_message");
   });
 
   it("replaces connector exception details with a bounded error summary", async () => {

@@ -23,6 +23,10 @@ import {
   extractCandidateContext,
 } from "./extract-context";
 import { buildModelContext } from "./model-context";
+import {
+  detectPromptInjection,
+  recordPromptInjectionTrace,
+} from "./prompt-injection";
 import { fallbackReply, GeneratedAgentReplySchema } from "./response";
 import { recordConversationExchange } from "./conversation-memory";
 import {
@@ -110,6 +114,11 @@ export interface AgentExecutionResult {
 export async function runAgent(
   input: AgentInput,
 ): Promise<AgentExecutionResult> {
+  // 客服消息和其中粘贴的日志都是不可信数据；检测结果只用于审计，不能成为诊断证据。
+  recordPromptInjectionTrace(
+    input.toolContext,
+    detectPromptInjection(input.text),
+  );
   const now = input.now ?? (() => new Date());
   const contextBudget = resolveContextBudget(input.contextBudget);
   const runTokenBudget = new RunTokenBudget(contextBudget.maxTotalTokens);
