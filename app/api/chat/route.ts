@@ -16,6 +16,7 @@ import { MySqlStateStore } from "../../../src/persistence/mysql/mysql-state-stor
 import { createToolContext } from "../../../src/tools/context";
 import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
 import { ToolRegistry } from "../../../src/tools/registry";
+import { getTraceStore } from "../../../src/server/trace-runtime";
 
 let stateStore: MySqlStateStore | undefined;
 const registry = new ToolRegistry({
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
       toolContext,
       registry,
       stateStore,
+      traceStore: getTraceStore(),
       targetSwitchDecision: parsed.data.action,
     });
     return NextResponse.json({

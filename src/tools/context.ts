@@ -8,6 +8,7 @@ export const PermissionSchema = z.enum([
   "diagnosis:read",
   "diagnosis:read_delivery",
   "diagnosis:read_connection",
+  "diagnosis:trace:read",
   "escalation:draft:create",
 ]);
 export type Permission = z.infer<typeof PermissionSchema>;

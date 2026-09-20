@@ -28,7 +28,7 @@ export function authenticateDemoSupportRequest(
   return {
     tenantId: "tenant_demo",
     actorId: "support_demo",
-    permissions: ["escalation:draft:create"],
+    permissions: ["escalation:draft:create", "diagnosis:trace:read"],
   };
 }
 

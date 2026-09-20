@@ -39,7 +39,7 @@ describe("authenticateDemoSupportRequest", () => {
     expect(authenticateDemoSupportRequest(request, environment)).toEqual({
       tenantId: "tenant_demo",
       actorId: "support_demo",
-      permissions: ["escalation:draft:create"],
+      permissions: ["escalation:draft:create", "diagnosis:trace:read"],
     });
   });
 });

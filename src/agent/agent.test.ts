@@ -13,6 +13,7 @@ import { createInMemoryDraftRepository } from "../tools/draft-repository";
 import { ToolRegistry } from "../tools/registry";
 import { runAgent } from "./agent";
 import { InMemoryStateStore } from "./state-store";
+import { InMemoryTraceStore } from "./trace-store";
 
 const usage = {
   inputTokens: {
@@ -91,6 +92,7 @@ function responseResult(
 function testRuntime(connector = new FakeConnector("delivered")) {
   const timestamp = Date.parse("2026-09-07T08:00:00Z");
   const store = new InMemoryStateStore({ now: () => timestamp });
+  const traceStore = new InMemoryTraceStore();
   const registry = new ToolRegistry({
     connector,
     draftRepository: createInMemoryDraftRepository(),
@@ -112,6 +114,7 @@ function testRuntime(connector = new FakeConnector("delivered")) {
   return {
     timestamp,
     store,
+    traceStore,
     registry,
     context,
     now: () => new Date(timestamp),
@@ -141,6 +144,7 @@ describe("runAgent stateful loop", () => {
       toolContext: runtime.context("run_delivered"),
       registry: runtime.registry,
       stateStore: runtime.store,
+      traceStore: runtime.traceStore,
       now: runtime.now,
     });
 
@@ -177,6 +181,12 @@ describe("runAgent stateful loop", () => {
     expect(result.trace.steps.map((step) => step.sequence)).toEqual([
       1, 2, 3, 4, 5, 6,
     ]);
+    expect(
+      await runtime.traceStore.get(
+        { tenantId: "tenant_test", actorId: "support_test" },
+        "run_delivered",
+      ),
+    ).toEqual(result.trace);
 
     const saved = await runtime.store.load({
       sessionId: "session_delivered",

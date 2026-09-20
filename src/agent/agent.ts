@@ -60,6 +60,7 @@ import {
 import { evaluateStopRules } from "./stop-rules";
 import { SYSTEM_PROMPT } from "./system-prompt";
 import { AgentRunTrace, RunTraceRecorder } from "./run-trace";
+import { TraceStore } from "./trace-store";
 
 const RESPONSE_PROMPT = `${SYSTEM_PROMPT}
 
@@ -77,6 +78,8 @@ export interface AgentInput {
   toolContext: ToolContext;
   registry: ToolRegistry;
   stateStore: StateStore;
+  /** 可选审计仓储；未配置时 Trace 仍会随响应返回。 */
+  traceStore?: TraceStore;
   targetSwitchDecision?: TargetSwitchDecision;
   contextBudget?: Partial<ContextBudget>;
   maxSteps?: number;
@@ -170,6 +173,7 @@ export async function runAgent(
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
       traceRecorder,
+      traceStore: input.traceStore,
     });
   }
 
@@ -186,6 +190,7 @@ export async function runAgent(
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
       traceRecorder,
+      traceStore: input.traceStore,
     });
   }
 
@@ -243,6 +248,7 @@ export async function runAgent(
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
       traceRecorder,
+      traceStore: input.traceStore,
     });
   }
 
@@ -302,6 +308,7 @@ export async function runAgent(
       stopReason: "max_tokens",
       tokenUsage: runTokenBudget.snapshot(),
       traceRecorder,
+      traceStore: input.traceStore,
     });
   }
   const selectionContext = buildModelContext(state, "select_tool", {
@@ -438,6 +445,7 @@ export async function runAgent(
     stopReason: finalStopReason,
     tokenUsage: runTokenBudget.snapshot(),
     traceRecorder,
+    traceStore: input.traceStore,
   });
 }
 
@@ -584,7 +592,7 @@ function withPendingQuestion(
   });
 }
 
-function executionResult(input: {
+async function executionResult(input: {
   state: AgentSessionState;
   diagnosis: DiagnosisResult;
   reply: string;
@@ -594,10 +602,12 @@ function executionResult(input: {
   stopReason?: string;
   tokenUsage: RunTokenUsage;
   traceRecorder: RunTraceRecorder;
-}): AgentExecutionResult {
+  traceStore?: TraceStore;
+}): Promise<AgentExecutionResult> {
   const diagnosisStarted = input.traceRecorder.mark();
   input.traceRecorder.recordAgent("diagnose", diagnosisStarted, "success", {
     classification: input.diagnosis.classification,
+    unsupportedCapabilities: input.diagnosis.unsupportedCapabilities,
   });
   const status =
     input.state.status === "awaiting_information"
@@ -611,7 +621,21 @@ function executionResult(input: {
     status,
     stopReason: input.stopReason,
     finalClassification: input.diagnosis.classification,
+    humanConfirmation: {
+      triggered: input.state.confirmationState.status !== "not_required",
+      status: input.state.confirmationState.status,
+    },
   });
+  // Trace 保存是独立 Repository 边界；回放只读取它，不会再次执行工具。
+  if (input.traceStore) {
+    await input.traceStore.save(
+      {
+        tenantId: input.state.tenantId,
+        actorId: input.state.actorId,
+      },
+      trace,
+    );
+  }
   return {
     sessionId: input.state.sessionId,
     stateVersion: input.state.version,

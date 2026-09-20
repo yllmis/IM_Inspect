@@ -60,6 +60,23 @@ type TraceStepInput =
   | Omit<ToolTraceStep, "stepId" | "sequence">
   | Omit<SecurityTraceStep, "stepId" | "sequence">;
 
+const HumanConfirmationTraceSchema = z
+  .object({
+    triggered: z.boolean(),
+    status: z.enum([
+      "not_required",
+      "pending",
+      "confirmed",
+      "rejected",
+      "expired",
+      "unknown",
+    ]),
+  })
+  .strict();
+export type HumanConfirmationTrace = z.infer<
+  typeof HumanConfirmationTraceSchema
+>;
+
 export const AgentRunTraceSchema = z
   .object({
     traceVersion: z.literal(1),
@@ -83,6 +100,10 @@ export const AgentRunTraceSchema = z
       ])
       .nullable(),
     classificationSource: z.literal("deterministic_diagnosis"),
+    humanConfirmation: HumanConfirmationTraceSchema.default({
+      triggered: false,
+      status: "not_required",
+    }),
     totalDurationMs: z.number().int().nonnegative(),
   })
   .strict();
@@ -174,6 +195,7 @@ export class RunTraceRecorder {
     status: AgentRunTrace["status"];
     stopReason?: string;
     finalClassification?: AgentRunTrace["finalClassification"];
+    humanConfirmation?: HumanConfirmationTrace;
     finishedAt?: Date;
   }): AgentRunTrace {
     const finishedAt = input.finishedAt ?? new Date();
@@ -189,6 +211,10 @@ export class RunTraceRecorder {
       steps: this.steps,
       finalClassification: input.finalClassification ?? null,
       classificationSource: "deterministic_diagnosis",
+      humanConfirmation: input.humanConfirmation ?? {
+        triggered: false,
+        status: "not_required",
+      },
       totalDurationMs: Math.max(
         0,
         Math.round(performance.now() - this.monotonicStart),
