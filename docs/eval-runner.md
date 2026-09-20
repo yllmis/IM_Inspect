@@ -1,6 +1,6 @@
 # Eval 校验与执行边界
 
-`npm run eval` 当前执行 `scripts/validate-eval.rb`。它会自动检查：
+`npm run eval:contract` 执行 `scripts/validate-eval.rb`，自动检查：
 
 - `docs/eval-cases.yaml` 包含 20～30 个场景，当前为 24 个；
 - 场景名称唯一，必填字段齐全，分类属于 Canonical Model；
@@ -8,6 +8,8 @@
 - `requires_confirmation`、`must_include`、`must_not` 等字段类型正确；
 - 场景引用的 Fixture 有多少已经存在。
 
-这一步是“契约级校验”，不会调用模型、数据库、Kafka、Redis 或真实 IM，因此不会把缺少生产数据的场景误报成执行通过。当前只有本地 Fake Connector 的固定 Fixture 可以用于单元测试；要运行完整 24 场景，需要为每个 `setup.fixture` 提供数据源并接入确定性的 Eval Runner。
+`npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据；因此当前运行结果仍不是 24 个场景全部通过。
+
+脚本化模型只固定“提取上下文、选择预期工具、生成响应”这条测试流程，不用于宣称真实模型的语言质量。Runner 仍以 Agent 返回的确定性 `diagnose()` 分类为准，并验证 `expected_error`、响应断言、人工确认边界和禁用工具是否实际触发。汇总中的平均耗时和工具调用次数仅代表本机固定 Fixture 的回归基线。
 
 完成真实 Runner 后，应额外输出每个场景的：实际分类、证据完整性、Trace 字段、禁用工具拦截结果和失败原因，并将结果保存到独立的 Eval 报告，而不是修改场景预期。
