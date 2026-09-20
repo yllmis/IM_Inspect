@@ -53,6 +53,31 @@ function draftInput(): Omit<CreateEscalationDraftInput, "contentHash"> & {
 }
 
 describe("ToolRegistry", () => {
+  it.each([
+    "resend_message",
+    "modify_message",
+    "kick_user",
+    "execute_sql",
+    "execute_shell",
+    "submit_incident",
+    "drop_database",
+    "delete_user",
+    "send_external_webhook",
+    "approve_incident",
+  ])("blocks dangerous or unregistered tool %s", async (name) => {
+    const connector = new FakeConnector("delivered");
+    const result = await new ToolRegistry({
+      connector,
+      draftRepository: repository(),
+    }).execute(name, {}, context());
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "tool_not_found" },
+    });
+    expect(connector.calls).toHaveLength(0);
+  });
+
   it("only executes allowlisted tools and records request/run trace", async () => {
     const ctx = context();
     const registry = new ToolRegistry({

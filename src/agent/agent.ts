@@ -51,6 +51,7 @@ import {
   mergeDiagnosisResult,
   mergeToolResult,
   resolveTargetSwitch,
+  TargetSwitchResolutionError,
 } from "./state-merge";
 import {
   SessionStateIdentity,
@@ -132,6 +133,39 @@ export async function runAgent(
     detectPromptInjection(input.text),
   );
   traceRecorder.syncToolTraces(input.toolContext.traces);
+  try {
+    return await runAgentLoop({
+      ...input,
+      now,
+      traceRecorder,
+    });
+  } catch (error) {
+    // 即使模型、预算或 StateStore 抛错，也保存失败 Run 的最小审计 Trace。
+    traceRecorder.recordAgent(
+      "diagnose",
+      traceRecorder.mark(),
+      "error",
+      { classification: null },
+      errorCodeForTrace(error),
+    );
+    const trace = traceRecorder.finish({
+      status: "failed",
+      stopReason: "execution_failed",
+      finalClassification: null,
+    });
+    await saveFailureTraceBestEffort(input, trace);
+    throw error;
+  }
+}
+
+async function runAgentLoop(
+  input: AgentInput & {
+    now: () => Date;
+    traceRecorder: RunTraceRecorder;
+  },
+): Promise<AgentExecutionResult> {
+  const now = input.now;
+  const traceRecorder = input.traceRecorder;
   const contextBudget = resolveContextBudget(input.contextBudget);
   const runTokenBudget = new RunTokenBudget(contextBudget.maxTotalTokens);
   const identity: SessionStateIdentity = {
@@ -669,3 +703,38 @@ async function executionResult(input: {
 }
 
 export { createToolContext };
+
+/**
+ * 失败 Trace 只能记录有限错误码，不能把异常消息、堆栈或凭证写入审计记录。
+ * 这里保留错误类别，便于按 runId 回放失败阶段，同时避免泄露底层实现细节。
+ */
+function errorCodeForTrace(error: unknown): string {
+  if (error instanceof ContextBudgetExceededError) return error.code;
+  if (error instanceof StateStoreError) return `state_${error.code}`;
+  if (error instanceof TargetSwitchResolutionError) {
+    return `target_switch_${error.code}`;
+  }
+  return "agent_execution_failed";
+}
+
+/**
+ * Trace 是旁路审计能力：存储异常不能覆盖真正导致本次 Run 失败的原始异常。
+ * MVP 采用尽力保存；生产环境应把 TraceStore 替换为可靠的持久化实现和告警机制。
+ */
+async function saveFailureTraceBestEffort(
+  input: AgentInput,
+  trace: AgentRunTrace,
+): Promise<void> {
+  if (!input.traceStore) return;
+  try {
+    await input.traceStore.save(
+      {
+        tenantId: input.toolContext.tenantId,
+        actorId: input.toolContext.actorId,
+      },
+      trace,
+    );
+  } catch {
+    // 不抛出 TraceStore 错误，以免调用方看不到真正的 Agent 执行异常。
+  }
+}

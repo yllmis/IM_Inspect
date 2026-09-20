@@ -122,6 +122,51 @@ function testRuntime(connector = new FakeConnector("delivered")) {
 }
 
 describe("runAgent stateful loop", () => {
+  it("保存模型异常的失败 Trace，且不泄露异常消息", async () => {
+    const runtime = testRuntime();
+    const secretMessage = "database-password=do-not-log";
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw new Error(secretMessage);
+      },
+    });
+
+    await expect(
+      runAgent({
+        sessionId: "session_failed_trace",
+        text: "查询 msg_delivered",
+        model,
+        toolContext: runtime.context("run_failed_trace"),
+        registry: runtime.registry,
+        stateStore: runtime.store,
+        traceStore: runtime.traceStore,
+        now: runtime.now,
+      }),
+    ).rejects.toThrow(secretMessage);
+
+    const trace = await runtime.traceStore.get(
+      { tenantId: "tenant_test", actorId: "support_test" },
+      "run_failed_trace",
+    );
+    expect(trace).toMatchObject({
+      status: "failed",
+      stopReason: "execution_failed",
+      finalClassification: null,
+      classificationSource: "deterministic_diagnosis",
+    });
+    expect(trace?.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "agent",
+          action: "diagnose",
+          outcome: "error",
+          errorCode: "agent_execution_failed",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(trace)).not.toContain(secretMessage);
+  });
+
   it("merges validated tool facts, diagnoses deterministically and persists state", async () => {
     const runtime = testRuntime();
     const model = new MockLanguageModelV4({
