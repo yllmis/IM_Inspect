@@ -68,7 +68,11 @@ export async function POST(request: Request) {
       stateStore,
       targetSwitchDecision: parsed.data.action,
     });
-    return NextResponse.json({ ...result, traces: toolContext.traces });
+    return NextResponse.json({
+      ...result,
+      // traces 保留旧的单工具调试字段；trace 是统一的 AgentRunTrace。
+      traces: toolContext.traces,
+    });
   } catch (error) {
     if (error instanceof MySqlConfigurationError) {
       return NextResponse.json(

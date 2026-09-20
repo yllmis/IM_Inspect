@@ -59,6 +59,7 @@ import {
 } from "./state-store";
 import { evaluateStopRules } from "./stop-rules";
 import { SYSTEM_PROMPT } from "./system-prompt";
+import { AgentRunTrace, RunTraceRecorder } from "./run-trace";
 
 const RESPONSE_PROMPT = `${SYSTEM_PROMPT}
 
@@ -102,6 +103,7 @@ export interface AgentExecutionResult {
   stopReason?: string;
   modelText: string;
   tokenUsage: RunTokenUsage;
+  trace: AgentRunTrace;
   pendingAction?: {
     type: "switch_diagnosis_target";
     decisionId: string;
@@ -114,12 +116,19 @@ export interface AgentExecutionResult {
 export async function runAgent(
   input: AgentInput,
 ): Promise<AgentExecutionResult> {
+  const now = input.now ?? (() => new Date());
+  const traceRecorder = new RunTraceRecorder({
+    runId: input.toolContext.runId,
+    sessionId: input.sessionId,
+    requestId: input.toolContext.requestId,
+    startedAt: now(),
+  });
   // 客服消息和其中粘贴的日志都是不可信数据；检测结果只用于审计，不能成为诊断证据。
   recordPromptInjectionTrace(
     input.toolContext,
     detectPromptInjection(input.text),
   );
-  const now = input.now ?? (() => new Date());
+  traceRecorder.syncToolTraces(input.toolContext.traces);
   const contextBudget = resolveContextBudget(input.contextBudget);
   const runTokenBudget = new RunTokenBudget(contextBudget.maxTotalTokens);
   const identity: SessionStateIdentity = {
@@ -160,6 +169,7 @@ export async function runAgent(
       steps: 0,
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
+      traceRecorder,
     });
   }
 
@@ -175,6 +185,7 @@ export async function runAgent(
       steps: 0,
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
+      traceRecorder,
     });
   }
 
@@ -187,6 +198,7 @@ export async function runAgent(
       currentUserText: input.text,
       budget: contextBudget,
     });
+    const extractionStarted = traceRecorder.mark();
     const extracted = await extractCandidateContext({
       model: input.model,
       modelContext: extractionContext,
@@ -200,6 +212,9 @@ export async function runAgent(
         ),
     });
     const candidatePatch = nonNullCandidatePatch(extracted);
+    traceRecorder.recordAgent("extract_context", extractionStarted, "success", {
+      extractedFields: Object.keys(candidatePatch ?? {}),
+    });
     if (candidatePatch) {
       state = mergeCandidateContext(state, candidatePatch, now()).state;
     }
@@ -227,6 +242,7 @@ export async function runAgent(
       steps: 0,
       stopReason: "ask_for_information",
       tokenUsage: runTokenBudget.snapshot(),
+      traceRecorder,
     });
   }
 
@@ -239,6 +255,7 @@ export async function runAgent(
       args,
       input.toolContext,
     );
+    traceRecorder.syncToolTraces(input.toolContext.traces);
     // ToolRegistry 统一拥有 Run 内去重；Agent 只根据 meta 识别无进展循环并停止。
     const cached = response.meta.cached;
     repeatedCall = repeatedCall || cached;
@@ -284,6 +301,7 @@ export async function runAgent(
       steps: 0,
       stopReason: "max_tokens",
       tokenUsage: runTokenBudget.snapshot(),
+      traceRecorder,
     });
   }
   const selectionContext = buildModelContext(state, "select_tool", {
@@ -296,6 +314,7 @@ export async function runAgent(
     budget: contextBudget,
     includesTools: true,
   });
+  const selectionStarted = traceRecorder.mark();
   const selection = await generateText({
     model: input.model,
     system: SYSTEM_PROMPT,
@@ -318,6 +337,9 @@ export async function runAgent(
       ),
     maxRetries: 0,
   });
+  traceRecorder.recordAgent("select_tool", selectionStarted, "success", {
+    stepCount: selection.steps.length,
+  });
 
   diagnosis = refreshDiagnosis(state, input);
   state = diagnosis.state;
@@ -338,6 +360,9 @@ export async function runAgent(
     budget: contextBudget,
   });
   let modelText = "";
+  const responseStarted = traceRecorder.mark();
+  let responseOutcome: "success" | "error" = "success";
+  let responseErrorCode: string | undefined;
   try {
     runTokenBudget.assertCanReserve(contextBudget.maxOutputTokens);
     const responsePrompt = JSON.stringify(responseContext);
@@ -369,8 +394,20 @@ export async function runAgent(
     ) {
       throw error;
     }
+    responseOutcome = "error";
+    responseErrorCode =
+      error instanceof ContextBudgetExceededError
+        ? error.code
+        : "response_generation_failed";
     // 回复生成失败不改变已经确认的事实和诊断，使用确定性模板兜底。
   }
+  traceRecorder.recordAgent(
+    "generate_response",
+    responseStarted,
+    responseOutcome,
+    { usedFallback: modelText.length === 0 },
+    responseErrorCode,
+  );
 
   const reply = modelText || fallbackReply(diagnosis.result);
   const finalStopReason = runTokenBudget.isExceeded()
@@ -400,6 +437,7 @@ export async function runAgent(
     steps: selection.steps.length,
     stopReason: finalStopReason,
     tokenUsage: runTokenBudget.snapshot(),
+    traceRecorder,
   });
 }
 
@@ -555,7 +593,25 @@ function executionResult(input: {
   steps: number;
   stopReason?: string;
   tokenUsage: RunTokenUsage;
+  traceRecorder: RunTraceRecorder;
 }): AgentExecutionResult {
+  const diagnosisStarted = input.traceRecorder.mark();
+  input.traceRecorder.recordAgent("diagnose", diagnosisStarted, "success", {
+    classification: input.diagnosis.classification,
+  });
+  const status =
+    input.state.status === "awaiting_information"
+      ? "awaiting_information"
+      : input.state.status === "stopped"
+        ? "stopped"
+        : input.state.status === "failed"
+          ? "failed"
+          : "completed";
+  const trace = input.traceRecorder.finish({
+    status,
+    stopReason: input.stopReason,
+    finalClassification: input.diagnosis.classification,
+  });
   return {
     sessionId: input.state.sessionId,
     stateVersion: input.state.version,
@@ -575,6 +631,7 @@ function executionResult(input: {
     stopReason: input.stopReason,
     modelText: input.modelText,
     tokenUsage: input.tokenUsage,
+    trace,
     pendingAction: input.state.pendingTargetSwitch
       ? {
           type: "switch_diagnosis_target",
