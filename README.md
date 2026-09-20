@@ -11,7 +11,7 @@
 - 多轮状态：保留内存 `StateStore` 用于单元测试，API 已接入 `MySqlStateStore`；使用相同 `sessionId` 继续诊断，并通过 `version` 乐观锁阻止并发覆盖。
 - 工具结果边界：投递查询在 Connector 源头使用 `timeRange + limit`，显式返回完整性、截断和安全来源引用；Tool 层再执行字段白名单、脱敏、异常摘要和响应字节上限，模型只接收按用途裁剪的工作摘要。
 - 升级草稿：独立的 `prepare/confirm` API 使用 10 分钟一次性令牌、内容哈希、会话版本和幂等键；诊断快照、确认记录和草稿写入 MySQL，Agent Loop 不持有写权限。
-- 尚未实现：GoIMConnector 和 Eval Runner。
+- 尚未实现：GoIMConnector 和真实下游数据驱动的 Eval Runner；当前 `npm run eval` 只做场景契约校验。
 
 ## 架构图
 
@@ -26,6 +26,7 @@ npm run dev
 npm run typecheck
 npm test
 npm run build
+npm run eval
 ```
 
 ## MySQL
@@ -64,7 +65,9 @@ npm run test:mysql
 设计文档校验：
 
 ```sh
-ruby -e 'require "yaml"; x = YAML.load_file("docs/eval-cases.yaml"); abort unless (20..30).include?(x["cases"].length)'
+npm run eval
 ```
+
+`npm run eval` 会检查 24 个场景的字段、分类和禁用工具边界，并报告引用的 Fixture 是否已经存在；它不会调用模型或真实 IM。详见 [Eval 校验与执行边界](docs/eval-runner.md)。
 
 开发和测试使用本地固定数据，不需要生产凭证。Agent 不直接访问 MongoDB、MySQL、Redis、Kafka、SQL 或 Shell。

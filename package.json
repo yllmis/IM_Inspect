@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "eval": "ruby scripts/validate-eval.rb",
     "test:mysql": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/persistence/mysql/*.integration.test.ts",
     "test:watch": "vitest"
   },
