@@ -15,6 +15,12 @@ import { InMemoryTraceStore } from "../src/agent/trace-store";
 import { createInMemoryDraftRepository } from "../src/tools/draft-repository";
 import { createToolContext } from "../src/tools/context";
 import { ToolRegistry } from "../src/tools/registry";
+import {
+  DETERMINISTIC_CHECK_NAMES,
+  DeterministicChecks,
+  evaluateDeterministicChecks,
+  failedDeterministicChecks,
+} from "../src/eval/deterministic-checks";
 
 const EvalCaseSchema = z
   .object({
@@ -61,6 +67,7 @@ interface ScenarioResult {
   toolCallsConform: boolean | null;
   responseAssertionsPassed: boolean | null;
   dangerousOperationsBlocked: boolean | null;
+  deterministicChecks: DeterministicChecks | null;
   durationMs: number | null;
   toolCallCount: number | null;
   failureReasons: string[];
@@ -185,6 +192,7 @@ async function runScenario(
     toolCallsConform: null,
     responseAssertionsPassed: null,
     dangerousOperationsBlocked: null,
+    deterministicChecks: null,
     durationMs: null,
     toolCallCount: null,
     failureReasons: [],
@@ -213,6 +221,7 @@ async function runScenario(
     fixture.source.observedAt,
   );
   const startedAt = Date.now();
+  const maxSteps = 8;
   const toolContext = createToolContext({
     requestId: `request_${runId}`,
     runId,
@@ -237,7 +246,19 @@ async function runScenario(
       stateStore,
       traceStore,
       now: () => new Date(timestamp),
-      maxSteps: 8,
+      maxSteps,
+    });
+    const state = await stateStore.load({
+      sessionId: `session_${runId}`,
+      tenantId: "tenant_eval",
+      actorId: "actor_eval",
+    });
+    const deterministicChecks = evaluateDeterministicChecks({
+      result,
+      state,
+      inputText: scenario.input,
+      untrustedPayloads: collectUntrustedPayloads(fixture),
+      maxSteps,
     });
     const actualTools = result.toolCalls.map((call) => call.name);
     const expectedTools = scenario.expected_tools;
@@ -273,6 +294,11 @@ async function runScenario(
       failureReasons.push("response_assertion_failed");
     if (!dangerousOperationsBlocked)
       failureReasons.push("dangerous_tool_called");
+    failureReasons.push(
+      ...failedDeterministicChecks(deterministicChecks).map(
+        (name) => `deterministic_check:${name}`,
+      ),
+    );
     if (
       scenario.requires_confirmation !==
       result.trace.humanConfirmation.triggered
@@ -290,6 +316,7 @@ async function runScenario(
       toolCallsConform,
       responseAssertionsPassed,
       dangerousOperationsBlocked,
+      deterministicChecks,
       durationMs: Date.now() - startedAt,
       toolCallCount: result.toolCalls.length,
       failureReasons,
@@ -338,6 +365,17 @@ function summarize(results: ScenarioResult[]) {
       (item) => item.dangerousOperationsBlocked === true,
     ),
     dangerousOperationChecks: executed.length,
+    deterministicChecks: Object.fromEntries(
+      DETERMINISTIC_CHECK_NAMES.map((name) => [
+        name,
+        count((item) => item.deterministicChecks?.[name] === true),
+      ]),
+    ),
+    allDeterministicChecksPassed: count((item) =>
+      DETERMINISTIC_CHECK_NAMES.every(
+        (name) => item.deterministicChecks?.[name] === true,
+      ),
+    ),
     averageDurationMs: average(
       executed.flatMap((item) =>
         item.durationMs === null ? [] : [item.durationMs],
@@ -368,11 +406,28 @@ async function main(): Promise<void> {
       classification: item.actualClassification ?? "-",
       tools: item.toolCallCount ?? "-",
       durationMs: item.durationMs ?? "-",
+      deterministicChecks: item.deterministicChecks
+        ? `${DETERMINISTIC_CHECK_NAMES.length - failedDeterministicChecks(item.deterministicChecks).length}/${DETERMINISTIC_CHECK_NAMES.length}`
+        : "-",
       failures: item.failureReasons.join(",") || "-",
     })),
   );
   console.log("Eval summary:");
   console.log(JSON.stringify(summarize(results), null, 2));
+}
+
+function collectUntrustedPayloads(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(collectUntrustedPayloads);
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(
+    ([key, nested]) =>
+      /metadata|log|body|content/i.test(key)
+        ? collectUntrustedPayloads(nested)
+        : nested && typeof nested === "object"
+          ? collectUntrustedPayloads(nested)
+          : [],
+  );
 }
 
 void main().catch((error: unknown) => {
