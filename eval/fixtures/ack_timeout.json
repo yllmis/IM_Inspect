@@ -43,6 +43,10 @@
     }
   ],
   "connection": null,
+  "goldLabel": {
+    "classification": "ack_timeout",
+    "requiredEvidenceKinds": ["message", "delivery"]
+  },
   "behavior": {
     "getMessageStatus": { "kind": "success" },
     "getDeliveryEvents": { "kind": "success" },

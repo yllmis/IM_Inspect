@@ -11,7 +11,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "eval": "vite-node eval/runner.ts",
+    "eval": "EVAL_RUNNER_MAIN=1 vite-node eval/runner.ts",
+    "eval:judge": "node --env-file-if-exists=.env.local node_modules/vite-node/dist/cli.mjs eval/judge-runner.ts",
+    "eval:ci": "node --env-file-if-exists=.env.local node_modules/vite-node/dist/cli.mjs eval/judge-runner.ts --ci",
+    "eval:escalation": "node --env-file-if-exists=.env.local node_modules/vite-node/dist/cli.mjs eval/judge-runner.ts --group escalation_draft",
     "eval:contract": "ruby scripts/validate-eval.rb",
     "test:mysql": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/persistence/mysql/*.integration.test.ts",
     "test:watch": "vitest"

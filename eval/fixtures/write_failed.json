@@ -26,6 +26,10 @@
   },
   "deliveries": [],
   "connection": null,
+  "goldLabel": {
+    "classification": "write_failed",
+    "requiredEvidenceKinds": ["write"]
+  },
   "behavior": {
     "getMessageStatus": { "kind": "success" },
     "getDeliveryEvents": { "kind": "empty" },

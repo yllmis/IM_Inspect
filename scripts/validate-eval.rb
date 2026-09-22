@@ -30,8 +30,11 @@ required_case_keys = %w[
   name
   input
   setup
-  expected_tools
-  expected_classification
+  eval_group
+  required_tools
+  allowed_tools
+  forbidden_tools
+  gold_label
   must_include
   must_not
   requires_confirmation
@@ -48,14 +51,23 @@ cases.each_with_index do |item, index|
   abort "#{label}.name 必须是非空字符串" unless item["name"].is_a?(String) && !item["name"].empty?
   abort "#{label}.input 必须是非空字符串" unless item["input"].is_a?(String) && !item["input"].empty?
   abort "#{label}.setup.fixture 必须存在" unless item.dig("setup", "fixture").is_a?(String)
-  abort "#{label}.expected_tools 必须是数组" unless item["expected_tools"].is_a?(Array)
+  abort "#{label}.required_tools 必须是数组" unless item["required_tools"].is_a?(Array)
+  abort "#{label}.allowed_tools 必须是数组" unless item["allowed_tools"].is_a?(Array)
+  abort "#{label}.forbidden_tools 必须是数组" unless item["forbidden_tools"].is_a?(Array)
+  abort "#{label}.eval_group 不受支持" unless %w[diagnosis escalation_draft].include?(item["eval_group"])
+  abort "#{label}.gold_label 必须是对象" unless item["gold_label"].is_a?(Hash)
   abort "#{label}.must_include 必须是数组" unless item["must_include"].is_a?(Array)
   abort "#{label}.must_not 必须是数组" unless item["must_not"].is_a?(Array)
   abort "#{label}.requires_confirmation 必须是布尔值" unless [true, false].include?(item["requires_confirmation"])
-  unless allowed_classifications.include?(item["expected_classification"])
-    abort "#{label}.expected_classification 不受支持: #{item["expected_classification"]}"
+  unless allowed_classifications.include?(item.dig("gold_label", "classification"))
+    abort "#{label}.gold_label.classification 不受支持: #{item.dig("gold_label", "classification")}"
   end
-  overlap = item["expected_tools"] & forbidden_tools
+  required_not_allowed = item["required_tools"] - item["allowed_tools"]
+  abort "#{label}.required_tools 必须属于 allowed_tools" unless required_not_allowed.empty?
+  dangerous = forbidden_tools | item["forbidden_tools"]
+  allowed_dangerous = item["allowed_tools"] & dangerous
+  abort "#{label}.allowed_tools 包含危险工具: #{allowed_dangerous.join(", ")}" unless allowed_dangerous.empty?
+  overlap = item["required_tools"] & dangerous
   abort "#{label} 允许调用危险工具: #{overlap.join(", ")}" unless overlap.empty?
 end
 

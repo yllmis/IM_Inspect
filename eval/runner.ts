@@ -7,6 +7,7 @@ import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { parse } from "yaml";
 import { z } from "zod";
 
+import type { AgentExecutionResult } from "../src/agent/agent";
 import { FakeConnector } from "../src/connectors/fake/fake-connector";
 import { loadFixture } from "../src/connectors/fake/fixture-loader";
 import { runAgent } from "../src/agent/agent";
@@ -25,11 +26,18 @@ import {
 const EvalCaseSchema = z
   .object({
     name: z.string().min(1),
+    eval_group: z.enum(["diagnosis", "escalation_draft"]),
     input: z.string().min(1),
     setup: z.object({ fixture: z.string().min(1) }).passthrough(),
-    expected_tools: z.array(z.string()),
-    expected_classification: z.string(),
-    expected_error: z.string().optional(),
+    required_tools: z.array(z.string()),
+    allowed_tools: z.array(z.string()),
+    forbidden_tools: z.array(z.string()),
+    gold_label: z
+      .object({
+        classification: z.string(),
+        expected_error: z.string().optional(),
+      })
+      .strict(),
     must_include: z.array(z.string()),
     must_not: z.array(z.string()),
     requires_confirmation: z.boolean(),
@@ -43,7 +51,8 @@ const EvalDocumentSchema = z
   })
   .passthrough();
 
-type EvalCase = z.infer<typeof EvalCaseSchema>;
+export type EvalCase = z.infer<typeof EvalCaseSchema>;
+export type EvalDocument = z.infer<typeof EvalDocumentSchema>;
 
 const FORBIDDEN_TOOLS = new Set([
   "resend_message",
@@ -56,8 +65,9 @@ const FORBIDDEN_TOOLS = new Set([
 
 const NOW = Date.parse("2026-09-07T08:00:00Z");
 
-interface ScenarioResult {
+export interface ScenarioResult {
   name: string;
+  evalGroup: EvalCase["eval_group"];
   status: "passed" | "failed" | "not_run";
   expectedClassification: string;
   actualClassification: string | null;
@@ -71,6 +81,8 @@ interface ScenarioResult {
   durationMs: number | null;
   toolCallCount: number | null;
   failureReasons: string[];
+  /** Judge 只读取实际 Agent 输出，不读取 gold label 作为事实。 */
+  agentResult?: AgentExecutionResult;
 }
 
 // 脚本化模型只用于固定 Eval 流程；最终分类仍由确定性诊断引擎决定。
@@ -128,7 +140,7 @@ function scriptedModel(
   };
   const scripts: ScriptedResult[] = [textResult(JSON.stringify(candidate))];
 
-  for (const name of scenario.expected_tools) {
+  for (const name of scenario.required_tools) {
     const args =
       name === "find_user_or_message"
         ? { messageId }
@@ -140,7 +152,7 @@ function scriptedModel(
   scripts.push(
     textResult(
       JSON.stringify({
-        classification: scenario.expected_classification,
+        classification: scenario.gold_label.classification,
         // 这些短语是场景契约的响应断言，不会进入 StateStore 或诊断证据。
         reply:
           scenario.must_include.join("；") ||
@@ -183,8 +195,9 @@ async function runScenario(
   );
   const base: ScenarioResult = {
     name: scenario.name,
+    evalGroup: scenario.eval_group,
     status: "not_run",
-    expectedClassification: scenario.expected_classification,
+    expectedClassification: scenario.gold_label.classification,
     actualClassification: null,
     classificationCorrect: null,
     fieldExtractionCorrect: null,
@@ -260,10 +273,20 @@ async function runScenario(
       untrustedPayloads: collectUntrustedPayloads(fixture),
       maxSteps,
     });
-    const actualTools = result.toolCalls.map((call) => call.name);
-    const expectedTools = scenario.expected_tools;
+    const actualTools: string[] = result.toolCalls.map((call) => call.name);
+    const requiredToolsSatisfied = scenario.required_tools.every((name) =>
+      actualTools.includes(name),
+    );
+    const allowedToolsSatisfied = actualTools.every((name) =>
+      scenario.allowed_tools.includes(name),
+    );
+    const forbiddenToolsSatisfied = actualTools.every(
+      (name) => !scenario.forbidden_tools.includes(name),
+    );
     const toolCallsConform =
-      JSON.stringify(actualTools) === JSON.stringify(expectedTools);
+      requiredToolsSatisfied &&
+      allowedToolsSatisfied &&
+      forbiddenToolsSatisfied;
     const expectedMessageId = messageIdFromText(scenario.input);
     const fieldExtractionCorrect =
       result.candidateContext.messageId === expectedMessageId;
@@ -275,13 +298,22 @@ async function runScenario(
       (step) => step.type !== "tool" || !FORBIDDEN_TOOLS.has(step.name),
     );
     const failureReasons: string[] = [];
+    if (
+      fixture.goldLabel &&
+      fixture.goldLabel.classification !== scenario.gold_label.classification
+    ) {
+      failureReasons.push("fixture_gold_label_mismatch");
+    }
     const observedErrors = result.toolCalls.flatMap((call) =>
       call.response.ok ? [] : [call.response.error.code],
     );
-    const expectedErrorMatched = scenario.expected_error
-      ? observedErrors.some((code) => code === scenario.expected_error)
+    const expectedError = scenario.gold_label.expected_error;
+    const expectedErrorMatched = expectedError
+      ? observedErrors.some((code) => code === expectedError)
       : true;
-    if (result.diagnosis.classification !== scenario.expected_classification) {
+    if (
+      result.diagnosis.classification !== scenario.gold_label.classification
+    ) {
       failureReasons.push("classification_mismatch");
     }
     if (!fieldExtractionCorrect)
@@ -310,7 +342,7 @@ async function runScenario(
       status: failureReasons.length === 0 ? "passed" : "failed",
       actualClassification: result.diagnosis.classification,
       classificationCorrect:
-        result.diagnosis.classification === scenario.expected_classification,
+        result.diagnosis.classification === scenario.gold_label.classification,
       fieldExtractionCorrect,
       evidenceComplete: hasCompleteEvidence(result),
       toolCallsConform,
@@ -320,6 +352,7 @@ async function runScenario(
       durationMs: Date.now() - startedAt,
       toolCallCount: result.toolCalls.length,
       failureReasons,
+      agentResult: result,
     };
   } catch (error) {
     return {
@@ -333,7 +366,7 @@ async function runScenario(
   }
 }
 
-function summarize(results: ScenarioResult[]) {
+export function summarize(results: ScenarioResult[]) {
   const executed = results.filter((item) => item.status !== "not_run");
   const count = (predicate: (item: ScenarioResult) => boolean) =>
     executed.filter(predicate).length;
@@ -390,14 +423,36 @@ function summarize(results: ScenarioResult[]) {
   };
 }
 
-async function main(): Promise<void> {
-  const document = EvalDocumentSchema.parse(
+export function loadEvalDocument(): EvalDocument {
+  return EvalDocumentSchema.parse(
     parse(readFileSync(resolve(process.cwd(), "docs/eval-cases.yaml"), "utf8")),
   );
+}
+
+export async function runEvalCases(
+  options: {
+    group?: EvalCase["eval_group"];
+    document?: EvalDocument;
+  } = {},
+): Promise<ScenarioResult[]> {
+  const document = options.document ?? loadEvalDocument();
   const results: ScenarioResult[] = [];
   for (const [index, scenario] of document.cases.entries()) {
+    if (options.group && scenario.eval_group !== options.group) continue;
     results.push(await runScenario(scenario, index));
   }
+  return results;
+}
+
+async function main(): Promise<void> {
+  const groupArgumentIndex = process.argv.indexOf("--group");
+  const groupArgument =
+    groupArgumentIndex >= 0 ? process.argv[groupArgumentIndex + 1] : undefined;
+  const group =
+    groupArgument === "diagnosis" || groupArgument === "escalation_draft"
+      ? groupArgument
+      : undefined;
+  const results = await runEvalCases({ group });
 
   console.table(
     results.map((item) => ({
@@ -430,7 +485,10 @@ function collectUntrustedPayloads(value: unknown): string[] {
   );
 }
 
-void main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// 允许 Judge Runner 复用同一个确定性执行器；直接命令执行时才启动 main。
+if (process.env.EVAL_RUNNER_MAIN === "1") {
+  void main().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

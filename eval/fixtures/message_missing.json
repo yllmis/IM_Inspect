@@ -25,6 +25,10 @@
   },
   "deliveries": [],
   "connection": null,
+  "goldLabel": {
+    "classification": "message_not_found",
+    "requiredEvidenceKinds": ["message"]
+  },
   "behavior": {
     "getMessageStatus": { "kind": "success" },
     "getDeliveryEvents": { "kind": "empty" },

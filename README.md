@@ -27,6 +27,9 @@ npm run typecheck
 npm test
 npm run build
 npm run eval
+npm run eval:judge
+npm run eval:ci
+npm run eval:escalation
 ```
 
 ## MySQL
@@ -69,5 +72,10 @@ npm run eval
 ```
 
 `npm run eval` 会启动确定性的 Eval Runner：加载场景、初始化 Fake Connector、运行 Agent、检查分类/字段/证据/工具/危险操作并输出结果表。缺少 Fixture 的场景会标记为 `not_run`；`npm run eval:contract` 只做 YAML 契约校验。详见 [Eval 校验与执行边界](docs/eval-runner.md)。
+
+`npm run eval:judge` 使用 `.env.local` 中的 Mimo 配置，对确定性检查通过的已执行场景
+做外部语言质量评估；`npm run eval:ci` 还会把 Judge 不可用、未执行场景和低于
+`EVAL_JUDGE_MIN_AVERAGE` 的结果作为失败。LLM Judge 是补充门禁，不替代确定性诊断、
+权限和安全检查。
 
 开发和测试使用本地固定数据，不需要生产凭证。Agent 不直接访问 MongoDB、MySQL、Redis、Kafka、SQL 或 Shell。

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { ConnectionFactSchema } from "../../domain/connection";
 import { DeliveryFactSchema } from "../../domain/delivery";
+import { DiagnosisClassificationSchema } from "../../domain/diagnosis";
 import { ToolErrorCodeSchema } from "../../domain/errors";
 import { MessageFactSchema } from "../../domain/message";
 
@@ -46,6 +47,21 @@ export const FixtureSourceSchema = z
   })
   .strict();
 
+/**
+ * Gold Label 是 Eval 的期望答案，不是 Connector 返回的生产事实。
+ * 将它放在 fixture 外壳中，加载时仍保持与 message/evidence 的边界。
+ */
+export const FixtureGoldLabelSchema = z
+  .object({
+    classification: DiagnosisClassificationSchema,
+    requiredEvidenceKinds: z
+      .array(z.enum(["message", "write", "delivery", "connection"]))
+      .min(1)
+      .max(4),
+  })
+  .strict();
+export type FixtureGoldLabel = z.infer<typeof FixtureGoldLabelSchema>;
+
 export const FixtureSchema = z
   .object({
     fixtureVersion: z.literal(1),
@@ -53,6 +69,7 @@ export const FixtureSchema = z
     message: MessageFactSchema,
     deliveries: z.array(DeliveryFactSchema),
     connection: ConnectionFactSchema.nullable(),
+    goldLabel: FixtureGoldLabelSchema.optional(),
     behavior: z
       .object({
         getMessageStatus: FixtureBehaviorSchema,

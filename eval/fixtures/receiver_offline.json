@@ -58,6 +58,10 @@
       }
     ]
   },
+  "goldLabel": {
+    "classification": "receiver_offline",
+    "requiredEvidenceKinds": ["message", "delivery", "connection"]
+  },
   "behavior": {
     "getMessageStatus": { "kind": "success" },
     "getDeliveryEvents": { "kind": "success" },
