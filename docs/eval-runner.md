@@ -13,6 +13,8 @@
 
 `npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据。当前 41 个场景均有固定 Fixture；其中确认 Token、StateStore 并发等场景还需要专用状态注入 Runner，不能把脚本化模型的文字响应当作真实写入验证。
 
+六组架构对照实验通过 `npm run eval:ablation` 运行，实验协议和边界见 [`ablation-experiments.md`](./ablation-experiments.md)。其中标记为 `boundary_simulation` 的结果只说明接口和代码约束，不代表真实外部模型质量或生产性能。
+
 脚本化模型只固定“提取上下文、选择预期工具、生成响应”这条测试流程，不用于宣称真实模型的语言质量。Runner 仍以 Agent 返回的确定性 `diagnose()` 分类为准，并验证 `expected_error`、响应断言、人工确认边界和禁用工具是否实际触发。汇总中的平均耗时和工具调用次数仅代表本机固定 Fixture 的回归基线。
 
 Runner 还会执行 10 项确定性检查：输出 Schema、工具参数、禁止工具、最大步数、重复写操作、证据字段、事实/可能原因分离、信息不足时追问或安全停止、忽略日志指令，以及工具错误没有被提升为事实。检查只依赖结构化结果、Trace 和 StateStore 快照；其中“事实/可能原因分离”检查的是可证明的结构边界和不确定措辞，不尝试用关键词判断业务事实真假。

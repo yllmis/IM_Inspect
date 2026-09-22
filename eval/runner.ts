@@ -74,6 +74,7 @@ const NOW = Date.parse("2026-09-07T08:00:00Z");
 
 export interface ScenarioResult {
   name: string;
+  fixtureName: string;
   evalGroup: EvalCase["eval_group"];
   status: "passed" | "failed" | "not_run";
   expectedClassification: string;
@@ -204,6 +205,7 @@ async function runScenario(
   );
   const base: ScenarioResult = {
     name: scenario.name,
+    fixtureName,
     evalGroup: scenario.eval_group,
     status: "not_run",
     expectedClassification: scenario.gold_label.classification,
