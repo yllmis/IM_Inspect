@@ -27,6 +27,7 @@ npm run typecheck
 npm test
 npm run build
 npm run eval
+npm run eval:failures
 npm run eval:judge
 npm run eval:ci
 npm run eval:escalation
@@ -72,6 +73,10 @@ npm run eval
 ```
 
 `npm run eval` 会启动确定性的 Eval Runner：加载场景、初始化 Fake Connector、运行 Agent、检查分类/字段/证据/工具/危险操作并输出结果表。缺少 Fixture 的场景会标记为 `not_run`；`npm run eval:contract` 只做 YAML 契约校验。详见 [Eval 校验与执行边界](docs/eval-runner.md)。
+
+`npm run eval:failures` 会按 `failureCategories`（一级责任边界）和
+`failureReasons`（具体断点）记录失败案例，并可通过 `--before <报告路径>` 比较修改前后
+的失败场景、是否引入新问题和失败案例减少数。详见 [失败案例记录与回归比较](docs/failure-analysis.md)。
 
 `npm run eval:judge` 使用 `.env.local` 中的 Mimo 配置，对确定性检查通过的已执行场景
 做外部语言质量评估；`npm run eval:ci` 还会把 Judge 不可用、未执行场景和低于

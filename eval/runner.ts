@@ -23,6 +23,11 @@ import {
   evaluateDeterministicChecks,
   failedDeterministicChecks,
 } from "../src/eval/deterministic-checks";
+import {
+  classifyFailureReasons,
+  FAILURE_CATEGORIES,
+  type FailureCategory,
+} from "../src/eval/failure-categories";
 
 const EvalCaseSchema = z
   .object({
@@ -89,6 +94,8 @@ export interface ScenarioResult {
   durationMs: number | null;
   toolCallCount: number | null;
   failureReasons: string[];
+  /** 失败一级分类；failureReasons 仍保留具体原因用于定位。 */
+  failureCategories: FailureCategory[];
   /** Judge 只读取实际 Agent 输出，不读取 gold label 作为事实。 */
   agentResult?: AgentExecutionResult;
 }
@@ -220,13 +227,34 @@ async function runScenario(
     durationMs: null,
     toolCallCount: null,
     failureReasons: [],
+    failureCategories: [],
   };
 
   if (!existsSync(fixturePath)) {
-    return { ...base, failureReasons: ["fixture_not_found"] };
+    const failureReasons = ["fixture_not_found"];
+    return {
+      ...base,
+      failureReasons,
+      failureCategories: classifyFailureReasons(failureReasons),
+    };
   }
 
-  const fixture = loadFixture(fixtureName);
+  let fixture: ReturnType<typeof loadFixture>;
+  try {
+    fixture = loadFixture(fixtureName);
+  } catch (error) {
+    const failureReasons = [
+      error instanceof Error
+        ? `fixture_schema_invalid:${error.name}`
+        : "fixture_schema_invalid",
+    ];
+    return {
+      ...base,
+      status: "failed",
+      failureReasons,
+      failureCategories: classifyFailureReasons(failureReasons),
+    };
+  }
   const connector = new FakeConnector(fixtureName);
   const timestamp = NOW + index;
   const stateStore = new InMemoryStateStore({ now: () => timestamp });
@@ -366,16 +394,19 @@ async function runScenario(
       durationMs: Date.now() - startedAt,
       toolCallCount: result.toolCalls.length,
       failureReasons,
+      failureCategories: classifyFailureReasons(failureReasons),
       agentResult: result,
     };
   } catch (error) {
+    const failureReasons = [
+      error instanceof Error ? `agent_error:${error.name}` : "agent_error",
+    ];
     return {
       ...base,
       status: "failed",
       durationMs: Date.now() - startedAt,
-      failureReasons: [
-        error instanceof Error ? `agent_error:${error.name}` : "agent_error",
-      ],
+      failureReasons,
+      failureCategories: classifyFailureReasons(failureReasons),
     };
   }
 }
@@ -398,10 +429,22 @@ export function summarize(results: ScenarioResult[]) {
         new Map<string, number>(),
       ),
   );
+  const failureCategories = Object.fromEntries(
+    FAILURE_CATEGORIES.map((category) => [
+      category,
+      results.filter((item) => item.failureCategories.includes(category))
+        .length,
+    ]),
+  );
+  const failedCases = executed.filter((item) => item.status === "failed");
   return {
     totalScenarios: results.length,
     executedScenarios: executed.length,
     notRunScenarios: results.length - executed.length,
+    passedScenarioCount: executed.filter((item) => item.status === "passed")
+      .length,
+    failedScenarioCount: failedCases.length,
+    failedCaseNames: failedCases.map((item) => item.name),
     classificationCorrect: count((item) => item.classificationCorrect === true),
     fieldExtractionCorrect: count(
       (item) => item.fieldExtractionCorrect === true,
@@ -434,6 +477,7 @@ export function summarize(results: ScenarioResult[]) {
       ),
     ),
     failureReasons,
+    failureCategories,
   };
 }
 
@@ -478,6 +522,7 @@ async function main(): Promise<void> {
       deterministicChecks: item.deterministicChecks
         ? `${DETERMINISTIC_CHECK_NAMES.length - failedDeterministicChecks(item.deterministicChecks).length}/${DETERMINISTIC_CHECK_NAMES.length}`
         : "-",
+      categories: item.failureCategories.join(",") || "-",
       failures: item.failureReasons.join(",") || "-",
     })),
   );

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "eval": "EVAL_RUNNER_MAIN=1 vite-node eval/runner.ts",
+    "eval:failures": "FAILURE_REPORT_MAIN=1 vite-node eval/failure-report.ts",
     "eval:ablation": "ABLATION_RUNNER_MAIN=1 vite-node eval/ablation-runner.ts",
     "eval:judge": "node --env-file-if-exists=.env.local node_modules/vite-node/dist/cli.mjs eval/judge-runner.ts",
     "eval:ci": "node --env-file-if-exists=.env.local node_modules/vite-node/dist/cli.mjs eval/judge-runner.ts --ci",

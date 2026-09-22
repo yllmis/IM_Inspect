@@ -13,6 +13,8 @@
 
 `npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据。当前 41 个场景均有固定 Fixture；其中确认 Token、StateStore 并发等场景还需要专用状态注入 Runner，不能把脚本化模型的文字响应当作真实写入验证。
 
+`npm run eval:failures` 在同一执行结果上增加失败案例记录。它用稳定的一级分类统计责任边界，同时保留具体 `failureReasons`；使用 `--before <报告路径>` 可以比较修改前后的失败场景数、分类变化、新问题和失败案例减少数。报告写入 `eval/reports/failure-analysis-*.json` 和 `.md`，不会写入完整消息正文、凭证或 Token。分类边界和运行示例见 [`failure-analysis.md`](./failure-analysis.md)。
+
 六组架构对照实验通过 `npm run eval:ablation` 运行，实验协议和边界见 [`ablation-experiments.md`](./ablation-experiments.md)。其中标记为 `boundary_simulation` 的结果只说明接口和代码约束，不代表真实外部模型质量或生产性能。
 
 脚本化模型只固定“提取上下文、选择预期工具、生成响应”这条测试流程，不用于宣称真实模型的语言质量。Runner 仍以 Agent 返回的确定性 `diagnose()` 分类为准，并验证 `expected_error`、响应断言、人工确认边界和禁用工具是否实际触发。汇总中的平均耗时和工具调用次数仅代表本机固定 Fixture 的回归基线。
