@@ -26,4 +26,11 @@
 npm run eval:ablation
 ```
 
-输出包含每组的对照条件、处理条件、指标、结论和限制。六组实验不能替代 41 个场景的确定性 Eval；它们用于解释为什么选择当前架构。
+命令会同时写入：
+
+```text
+eval/reports/ablation-<UTC时间>.json
+eval/reports/ablation-<UTC时间>.md
+```
+
+JSON 保存机器可读指标、Git commit、运行环境和确定性 Eval 汇总；Markdown 保存便于复盘和面试说明的摘要。报告不保存 API Key，且明确记录 `boundary_simulation` 的限制。六组实验不能替代 41 个场景的确定性 Eval；它们用于解释为什么选择当前架构。

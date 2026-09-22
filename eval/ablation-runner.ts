@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { runEvalCases, type ScenarioResult } from "./runner";
+import { runEvalCases, summarize, type ScenarioResult } from "./runner";
 import { loadFixture } from "../src/connectors/fake/fixture-loader";
 import { diagnose } from "../src/domain/diagnose";
 import { buildDiagnosisInput } from "../src/agent/diagnosis-input";
@@ -20,7 +21,7 @@ import {
  * 六组对照实验共享同一批固定 Fixture；这里记录的是架构边界指标，
  * 不是让模型评价自己的答案，也不会把 Gold Label 写入诊断状态。
  */
-interface ExperimentReport {
+export interface ExperimentReport {
   id: string;
   title: string;
   control: string;
@@ -29,6 +30,29 @@ interface ExperimentReport {
   metrics: Record<string, number | string>;
   conclusion: string;
   limitations: string[];
+}
+
+export interface AblationExperimentReport {
+  reportVersion: 1;
+  generatedAt: string;
+  command: "npm run eval:ablation";
+  gitCommit: string;
+  runtime: {
+    nodeVersion: string;
+    platform: NodeJS.Platform;
+    arch: string;
+    execution: "offline_fixed_fixture";
+    externalModel: "not_used";
+    credentialsRecorded: false;
+  };
+  evaluation: {
+    totalScenarios: number;
+    executedScenarios: number;
+    notRunScenarios: number;
+    fixtureCount: number;
+    summary: ReturnType<typeof summarize>;
+  };
+  reports: ExperimentReport[];
 }
 
 const fixtureDirectory = resolve(process.cwd(), "eval/fixtures");
@@ -375,7 +399,9 @@ async function experimentWriteSafety(): Promise<ExperimentReport> {
   };
 }
 
-export async function runAblationExperiments() {
+export async function runAblationExperiments(
+  generatedAt = new Date(),
+): Promise<AblationExperimentReport> {
   const results = await runEvalCases();
   const reports = [
     experimentToolDesign(results),
@@ -385,11 +411,104 @@ export async function runAblationExperiments() {
     experimentContextManagement(),
     await experimentWriteSafety(),
   ];
-  return { generatedAt: new Date().toISOString(), reports };
+  const summary = summarize(results);
+  return {
+    reportVersion: 1,
+    generatedAt: generatedAt.toISOString(),
+    command: "npm run eval:ablation",
+    gitCommit: readGitCommit(),
+    runtime: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      execution: "offline_fixed_fixture",
+      externalModel: "not_used",
+      credentialsRecorded: false,
+    },
+    evaluation: {
+      totalScenarios: summary.totalScenarios,
+      executedScenarios: summary.executedScenarios,
+      notRunScenarios: summary.notRunScenarios,
+      fixtureCount: new Set(results.map((item) => item.fixtureName)).size,
+      summary,
+    },
+    reports,
+  };
+}
+
+/** 将一次实验的机器结果和人类摘要写入 eval/reports，避免只依赖终端滚动输出。 */
+export function writeAblationReport(
+  report: AblationExperimentReport,
+  directory = resolve(process.cwd(), "eval/reports"),
+): { jsonPath: string; markdownPath: string } {
+  mkdirSync(directory, { recursive: true });
+  const slug = report.generatedAt.replace(/\.\d{3}Z$/, "Z").replace(/:/g, "-");
+  const baseName = `ablation-${slug}`;
+  const jsonPath = resolve(directory, `${baseName}.json`);
+  const markdownPath = resolve(directory, `${baseName}.md`);
+  writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  writeFileSync(markdownPath, renderMarkdownReport(report), "utf8");
+  return { jsonPath, markdownPath };
+}
+
+function readGitCommit(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+function renderMarkdownReport(report: AblationExperimentReport): string {
+  const lines = [
+    "# 六组 Agent 对照实验结果",
+    "",
+    `- 生成时间：${report.generatedAt}`,
+    `- Git commit：\`${report.gitCommit}\``,
+    `- 执行命令：\`${report.command}\``,
+    `- 运行环境：${report.runtime.nodeVersion} / ${report.runtime.platform} / ${report.runtime.arch}`,
+    `- 执行类型：${report.runtime.execution}`,
+    `- 外部模型：${report.runtime.externalModel}`,
+    `- 场景数：${report.evaluation.totalScenarios}`,
+    `- 已执行：${report.evaluation.executedScenarios}`,
+    `- Fixture 数：${report.evaluation.fixtureCount}`,
+    "",
+    "本报告只记录固定 Fixture 的可复现实验。`boundary_simulation` 不代表真实模型质量或生产性能；报告不包含任何凭证。",
+    "",
+    "## 实验结果",
+    "",
+  ];
+  for (const item of report.reports) {
+    lines.push(
+      `### ${item.id}：${item.title}`,
+      "",
+      `- 对照：${item.control}`,
+      `- 处理：${item.treatment}`,
+      `- 状态：\`${item.status}\``,
+      `- 指标：\`${JSON.stringify(item.metrics)}\``,
+      `- 结论：${item.conclusion}`,
+      "- 限制：",
+      ...item.limitations.map((limitation) => `  - ${limitation}`),
+      "",
+    );
+  }
+  lines.push(
+    "## 确定性 Eval 汇总",
+    "",
+    `\`${JSON.stringify(report.evaluation.summary)}\``,
+    "",
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 async function main() {
   const report = await runAblationExperiments();
+  const written = writeAblationReport(report);
+  console.log(`报告已写入：${written.jsonPath}`);
+  console.log(`摘要已写入：${written.markdownPath}`);
   console.table(
     report.reports.map((item) => ({
       id: item.id,
