@@ -1,0 +1,167 @@
+{
+  "reportVersion": 1,
+  "generatedAt": "2026-09-22T13:19:46.765Z",
+  "command": "npm run eval:ablation",
+  "gitCommit": "22cd2f70fcc02e7b7511e7a788d803a740f0d6e3",
+  "runtime": {
+    "nodeVersion": "v26.5.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "execution": "offline_fixed_fixture",
+    "externalModel": "not_used",
+    "credentialsRecorded": false
+  },
+  "evaluation": {
+    "totalScenarios": 41,
+    "executedScenarios": 41,
+    "notRunScenarios": 0,
+    "fixtureCount": 29,
+    "summary": {
+      "totalScenarios": 41,
+      "executedScenarios": 41,
+      "notRunScenarios": 0,
+      "classificationCorrect": 41,
+      "fieldExtractionCorrect": 41,
+      "evidenceComplete": 41,
+      "toolCallsConform": 39,
+      "dangerousOperationsBlocked": 41,
+      "dangerousOperationChecks": 41,
+      "deterministicChecks": {
+        "outputSchema": 41,
+        "toolParameters": 41,
+        "forbiddenTools": 41,
+        "maxSteps": 41,
+        "duplicateWrites": 41,
+        "evidenceFields": 41,
+        "factCauseSeparation": 41,
+        "insufficientDataFollowUp": 41,
+        "injectedInstructionsIgnored": 41,
+        "toolErrorsNotFacts": 41
+      },
+      "allDeterministicChecksPassed": 41,
+      "averageDurationMs": 3.07,
+      "averageToolCallCount": 1.22,
+      "failureReasons": {
+        "confirmation_boundary_mismatch": 7,
+        "tool_calls_mismatch": 2,
+        "expected_error_missing": 5,
+        "response_assertion_failed": 1
+      }
+    }
+  },
+  "reports": [
+    {
+      "id": "tool_design",
+      "title": "工具设计：高层诊断工具 vs 细粒度工具",
+      "control": "单个 diagnose_message_issue（边界模拟）",
+      "treatment": "find/get_message/get_delivery/get_connection",
+      "status": "boundary_simulation",
+      "metrics": {
+        "scenarios": 41,
+        "fineGrainedAverageToolCalls": 1.22,
+        "fineGrainedAuditEvents": 215,
+        "highLevelVisibleToolCallsPerScenario": 31,
+        "fineGrainedDangerousOperationsBlocked": 41
+      },
+      "conclusion": "细粒度方案增加调用步骤，但保留每个工具的错误、权限和证据边界；高层方案的单次调用优势需要用真实聚合工具实现后再测延迟，当前不宣称它的模型质量。",
+      "limitations": [
+        "高层工具条件只模拟 Agent 可见接口，没有接入生产聚合工具。",
+        "当前指标用于比较审计边界和调用数量，不用于宣称性能优劣。"
+      ]
+    },
+    {
+      "id": "evidence_constraints",
+      "title": "证据约束：普通 Prompt vs facts/evidence/missingInformation",
+      "control": "普通自然语言回答（边界模拟）",
+      "treatment": "结构化事实、证据、缺失信息和可能原因",
+      "status": "boundary_simulation",
+      "metrics": {
+        "scenarios": 41,
+        "structuredContractPass": 41,
+        "ordinaryContractFields": 0,
+        "structuredContractFields": 4,
+        "toolErrorsNotPromotedToFacts": 41
+      },
+      "conclusion": "结构化输出能被代码检查事实、证据和缺失信息；普通 Prompt 没有可验证字段，因此即使文字看起来合理，也不能证明证据边界成立。",
+      "limitations": [
+        "普通 Prompt 条件没有调用外部 LLM；这里只测输出契约能力，不测自然语言质量。",
+        "Schema 合法不等于数据真实，真实性仍由 Connector 和诊断引擎保证。"
+      ]
+    },
+    {
+      "id": "tool_result_filtering",
+      "title": "工具结果处理：原始大量数据 vs 过滤后的结构化摘要",
+      "control": "Fixture 原始 JSON",
+      "treatment": "Tool/Agent 可见的结构化摘要",
+      "status": "measured",
+      "metrics": {
+        "scenarios": 41,
+        "rawCharacters": 42993,
+        "filteredCharacters": 38734,
+        "characterReductionPercent": 9.91,
+        "rawInjectionPayloads": 2,
+        "filteredInjectionPayloads": 0,
+        "evidenceComplete": 41
+      },
+      "conclusion": "过滤后的摘要减少模型可见内容，并保留诊断结果和受控证据引用；原始日志中的指令文本不应成为工具或系统指令。",
+      "limitations": [
+        "过滤结果长度依赖当前 Trace/诊断摘要格式，不等同于真实生产数据库响应大小。"
+      ]
+    },
+    {
+      "id": "deterministic_diagnosis",
+      "title": "最终分类：模型分类 vs 确定性 diagnose()",
+      "control": "接受模型返回的 classification（对抗性变异）",
+      "treatment": "模型只提供上下文，diagnose() 决定分类",
+      "status": "measured",
+      "metrics": {
+        "scenarios": 41,
+        "adversarialModelClassificationDifferences": 41,
+        "deterministicFinalClassification": 41,
+        "toolErrorsNotFacts": 41
+      },
+      "conclusion": "在受控的错误模型分类变异下，最终结果仍由 diagnose() 和 Trace 保持一致；这验证了模型输出不能覆盖确定性分类的代码边界。",
+      "limitations": [
+        "对抗性模型分类是离线变异，不代表真实模型错误率。"
+      ]
+    },
+    {
+      "id": "context_management",
+      "title": "上下文管理：完整历史 vs Working Memory",
+      "control": "完整历史对话",
+      "treatment": "StateStore 工作状态 + 按阶段构造 ModelContext",
+      "status": "measured",
+      "metrics": {
+        "fullTranscriptCharacters": 3838,
+        "compactContextCharacters": 2416,
+        "characterReductionPercent": 37.05,
+        "messageIdPreserved": 1,
+        "contextIncompleteFlag": 1,
+        "summaryEvidenceEligible": 1
+      },
+      "conclusion": "Working Memory 只发送当前阶段需要的字段，保留 messageId 和上下文不完整标记；历史摘要不会被当成诊断证据。",
+      "limitations": [
+        "这是固定长对话的本地测量，需要多轮真实 API 回放补充行为延迟。"
+      ]
+    },
+    {
+      "id": "write_safety",
+      "title": "写操作安全：前端 confirmed vs Token + contentHash + 幂等键",
+      "control": "信任 confirmed=true（边界模拟）",
+      "treatment": "服务端签发 Token、绑定内容哈希并执行幂等确认",
+      "status": "measured",
+      "metrics": {
+        "permissionDenied": 1,
+        "forgedTokenRejected": 1,
+        "validConfirmationSucceeded": 1,
+        "replayReturnedExistingDraft": 1,
+        "duplicateDraftsCreated": 0
+      },
+      "conclusion": "服务端不信任前端确认字段；没有权限或伪造 Token 不能写入，重复确认返回已有草稿而不是创建第二份。",
+      "limitations": [
+        "本次使用内存草稿仓储；MySQL 事务和唯一索引仍需集成测试覆盖。",
+        "内容修改后旧 Token 失效由服务层测试覆盖，Runner 只测确认主链路。"
+      ]
+    }
+  ]
+}
