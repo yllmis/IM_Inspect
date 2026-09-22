@@ -1,0 +1,59 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "conflicting_evidence",
+    "description": "消息状态与投递事件互相冲突",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_conflicting_evidence",
+    "receiverId": "user_conflict",
+    "status": "delivered",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:conflicting_evidence:message",
+        "source": "fixture:conflicting_evidence",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "status",
+        "value": "delivered"
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "messageId": "msg_conflicting_evidence",
+      "receiverId": "user_conflict",
+      "attemptId": "attempt_conflict_1",
+      "attemptedAt": "2026-09-02T09:59:30Z",
+      "result": "failed",
+      "errorCode": "delivery_failed",
+      "evidence": [
+        {
+          "id": "fixture:conflicting_evidence:delivery",
+          "source": "fixture:conflicting_evidence",
+          "kind": "delivery",
+          "observedAt": "2026-09-02T10:00:00Z",
+          "field": "delivery_result",
+          "value": "failed"
+        }
+      ]
+    }
+  ],
+  "connection": null,
+  "goldLabel": {
+    "classification": "insufficient_data",
+    "requiredEvidenceKinds": ["message", "delivery"]
+  },
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

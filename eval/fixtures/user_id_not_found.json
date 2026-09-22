@@ -1,0 +1,33 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "user_id_not_found",
+    "description": "用户查询没有匹配记录",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_user_not_found",
+    "receiverId": "user_missing_user",
+    "status": "unknown",
+    "exists": false,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "findUserOrMessage": {
+      "kind": "error",
+      "code": "not_found",
+      "message": "user was not found",
+      "retryable": false
+    },
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

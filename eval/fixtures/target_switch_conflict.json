@@ -1,0 +1,27 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "target_switch_conflict",
+    "description": "当前确认对象与新请求对象不同",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_001",
+    "receiverId": "user_target",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "confirmation_expired",
+    "description": "确认 Token 已过期",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_confirmation_expired",
+    "receiverId": "user_confirmation",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "multiple_users_same_display_name",
+    "description": "相同显示名对应多个用户，不能猜测稳定 userId",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_user_candidate_a",
+    "receiverId": "user_a",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "metadata": { "displayName": "小王" },
+    "evidence": []
+  },
+  "lookupMatches": [
+    {
+      "entityType": "user",
+      "userId": "user_a",
+      "displayName": "小王",
+      "observedAt": "2026-09-02T09:00:00Z",
+      "evidence": []
+    },
+    {
+      "entityType": "user",
+      "userId": "user_b",
+      "displayName": "小王",
+      "observedAt": "2026-09-02T09:00:00Z",
+      "evidence": []
+    }
+  ],
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "tool_empty_result",
+    "description": "消息查找成功但没有匹配记录",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_empty_result_placeholder",
+    "receiverId": "user_empty_result",
+    "status": "unknown",
+    "exists": false,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "findUserOrMessage": { "kind": "empty" },
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

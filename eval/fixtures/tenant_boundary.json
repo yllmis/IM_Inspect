@@ -1,0 +1,32 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "tenant_boundary",
+    "description": "跨租户查询被后端拒绝",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_cross_tenant",
+    "receiverId": "user_cross_tenant",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": {
+      "kind": "error",
+      "code": "permission_denied",
+      "message": "tenant boundary denied access",
+      "retryable": false
+    },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

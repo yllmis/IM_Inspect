@@ -1,0 +1,36 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "duplicate_escalation_draft",
+    "description": "相同幂等键已经有升级草稿",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_duplicate_draft",
+    "receiverId": "user_duplicate_draft",
+    "status": "persisted",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:duplicate_escalation_draft:persisted",
+        "source": "fixture:duplicate_escalation_draft",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

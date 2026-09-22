@@ -63,7 +63,23 @@ export class FakeConnector implements Connector {
       input: parsed,
       requestContext,
     });
-    const behavior = this.fixture.behavior.getMessageStatus;
+    const behavior = this.behaviorFor("findUserOrMessage");
+    if (behavior.kind === "error") {
+      return this.failure(
+        "findUserOrMessage",
+        behavior.code,
+        behavior.message,
+        behavior.retryable,
+        behavior.details,
+      );
+    }
+    if (behavior.kind === "empty") {
+      return this.respond("findUserOrMessage", parsed, {
+        resolutionStatus: "none",
+        matches: [],
+        truncated: false,
+      });
+    }
     if (behavior.kind === "unsupported") {
       return this.failure(
         "findUserOrMessage",
@@ -73,34 +89,32 @@ export class FakeConnector implements Connector {
         { capability: behavior.capability },
       );
     }
-    const matches = [this.fixture.message]
-      .filter((message) => {
-        if (parsed.messageId && parsed.messageId !== message.messageId)
-          return false;
-        if (
-          parsed.userId &&
-          parsed.userId !== message.receiverId &&
-          parsed.userId !== message.senderId
-        )
-          return false;
-        if (
-          parsed.conversationId &&
-          parsed.conversationId !== message.conversationId
-        )
-          return false;
-        return true;
-      })
-      .map((message) => ({
-        entityType: "message" as const,
-        userId: message.receiverId,
-        conversationId: message.conversationId,
-        messageId: message.messageId,
-        observedAt:
-          message.statusAt ??
-          message.createdAt ??
-          this.fixture.source.observedAt,
-        evidence: message.evidence,
-      }));
+    const defaultMatch = {
+      entityType: "message" as const,
+      userId: this.fixture.message.receiverId,
+      displayName: this.fixture.message.metadata?.displayName,
+      conversationId: this.fixture.message.conversationId,
+      messageId: this.fixture.message.messageId,
+      observedAt:
+        this.fixture.message.statusAt ??
+        this.fixture.message.createdAt ??
+        this.fixture.source.observedAt,
+      evidence: this.fixture.message.evidence,
+    };
+    const lookupMatches = this.fixture.lookupMatches ?? [defaultMatch];
+    const matches = lookupMatches.filter((match) => {
+      if (parsed.messageId && parsed.messageId !== match.messageId)
+        return false;
+      if (parsed.userId && parsed.userId !== match.userId) return false;
+      if (parsed.displayName && match.displayName !== parsed.displayName)
+        return false;
+      if (
+        parsed.conversationId &&
+        parsed.conversationId !== match.conversationId
+      )
+        return false;
+      return true;
+    });
     const boundedMatches = matches.slice(0, parsed.limit);
     return this.respond("findUserOrMessage", parsed, {
       resolutionStatus:
@@ -132,6 +146,25 @@ export class FakeConnector implements Connector {
       input: parsed,
       requestContext,
     });
+    const behavior = this.fixture.behavior.getMessageStatus;
+    if (behavior.kind === "error") {
+      return this.failure(
+        "getMessageStatus",
+        behavior.code,
+        behavior.message,
+        behavior.retryable,
+        behavior.details,
+      );
+    }
+    if (behavior.kind === "unsupported") {
+      return this.failure(
+        "getMessageStatus",
+        "unsupported_capability",
+        `${behavior.capability} is not supported by this connector`,
+        false,
+        { capability: behavior.capability },
+      );
+    }
     if (parsed.messageId !== this.fixture.message.messageId) {
       return this.failure(
         "getMessageStatus",
@@ -272,9 +305,13 @@ export class FakeConnector implements Connector {
   }
 
   private behaviorFor(operation: FakeConnectorOperation): FixtureBehavior {
-    return operation === "findUserOrMessage"
-      ? this.fixture.behavior.getMessageStatus
-      : this.fixture.behavior[operation];
+    if (operation === "findUserOrMessage") {
+      return (
+        this.fixture.behavior.findUserOrMessage ??
+        this.fixture.behavior.getMessageStatus
+      );
+    }
+    return this.fixture.behavior[operation];
   }
 
   private defaultDeliveryTimeRange(): { start: string; end: string } {

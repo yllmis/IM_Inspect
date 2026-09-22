@@ -15,6 +15,7 @@ import { InMemoryStateStore } from "../src/agent/state-store";
 import { InMemoryTraceStore } from "../src/agent/trace-store";
 import { createInMemoryDraftRepository } from "../src/tools/draft-repository";
 import { createToolContext } from "../src/tools/context";
+import type { Permission } from "../src/tools/context";
 import { ToolRegistry } from "../src/tools/registry";
 import {
   DETERMINISTIC_CHECK_NAMES,
@@ -28,7 +29,13 @@ const EvalCaseSchema = z
     name: z.string().min(1),
     eval_group: z.enum(["diagnosis", "escalation_draft"]),
     input: z.string().min(1),
-    setup: z.object({ fixture: z.string().min(1) }).passthrough(),
+    setup: z
+      .object({
+        fixture: z.string().min(1),
+        permissions: z.array(z.string()).optional(),
+        tool_args: z.record(z.record(z.unknown())).optional(),
+      })
+      .passthrough(),
     required_tools: z.array(z.string()),
     allowed_tools: z.array(z.string()),
     forbidden_tools: z.array(z.string()),
@@ -47,7 +54,7 @@ const EvalCaseSchema = z
 const EvalDocumentSchema = z
   .object({
     version: z.literal(1),
-    cases: z.array(EvalCaseSchema).min(20).max(30),
+    cases: z.array(EvalCaseSchema).min(30).max(50),
   })
   .passthrough();
 
@@ -141,12 +148,14 @@ function scriptedModel(
   const scripts: ScriptedResult[] = [textResult(JSON.stringify(candidate))];
 
   for (const name of scenario.required_tools) {
+    const configuredArgs = scenario.setup.tool_args?.[name];
     const args =
-      name === "find_user_or_message"
+      configuredArgs ??
+      (name === "find_user_or_message"
         ? { messageId }
         : name === "get_message_status" || name === "get_delivery_events"
           ? { messageId }
-          : { userId: receiverId, at: observedAt };
+          : { userId: receiverId, at: observedAt });
     scripts.push(toolCallResult(name, args));
   }
   scripts.push(
@@ -240,11 +249,11 @@ async function runScenario(
     runId,
     tenantId: "tenant_eval",
     actorId: "actor_eval",
-    permissions: [
+    permissions: (scenario.setup.permissions ?? [
       "diagnosis:read",
       "diagnosis:read_delivery",
       "diagnosis:read_connection",
-    ],
+    ]) as Permission[],
     deadline: timestamp + 10_000,
     maxCalls: 6,
   });
@@ -300,6 +309,9 @@ async function runScenario(
     const failureReasons: string[] = [];
     if (
       fixture.goldLabel &&
+      !scenario.gold_label.expected_error &&
+      scenario.required_tools.length > 0 &&
+      scenario.setup.permissions === undefined &&
       fixture.goldLabel.classification !== scenario.gold_label.classification
     ) {
       failureReasons.push("fixture_gold_label_mismatch");

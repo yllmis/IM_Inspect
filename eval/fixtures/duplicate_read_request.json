@@ -1,0 +1,59 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "duplicate_read_request",
+    "description": "重复只读请求返回同一条已投递消息",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_duplicate_request",
+    "receiverId": "user_duplicate_request",
+    "status": "delivered",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:duplicate_read_request:persisted",
+        "source": "fixture:duplicate_read_request",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "messageId": "msg_duplicate_request",
+      "receiverId": "user_duplicate_request",
+      "attemptId": "attempt_duplicate_request_1",
+      "attemptedAt": "2026-09-02T09:59:30Z",
+      "result": "success",
+      "deliveredAt": "2026-09-02T09:59:31Z",
+      "evidence": [
+        {
+          "id": "fixture:duplicate_read_request:delivery",
+          "source": "fixture:duplicate_read_request",
+          "kind": "delivery",
+          "observedAt": "2026-09-02T10:00:00Z",
+          "field": "delivery_result",
+          "value": "success"
+        }
+      ]
+    }
+  ],
+  "connection": null,
+  "goldLabel": {
+    "classification": "delivered",
+    "requiredEvidenceKinds": ["message", "delivery"]
+  },
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

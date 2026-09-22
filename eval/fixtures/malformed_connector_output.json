@@ -1,0 +1,32 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "malformed_connector_output",
+    "description": "Connector 适配结果无法通过 Canonical Model Schema",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_invalid_shape",
+    "receiverId": "user_invalid_shape",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": {
+      "kind": "error",
+      "code": "internal",
+      "message": "canonical message schema validation failed",
+      "retryable": false
+    },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -14,7 +14,7 @@ abort "version 必须为 1" unless document["version"] == 1
 
 cases = document["cases"]
 abort "cases 必须是数组" unless cases.is_a?(Array)
-abort "cases 数量必须在 20 到 30 之间" unless (20..30).cover?(cases.length)
+abort "cases 数量必须在 30 到 50 之间" unless (30..50).cover?(cases.length)
 
 allowed_classifications = %w[
   message_not_found

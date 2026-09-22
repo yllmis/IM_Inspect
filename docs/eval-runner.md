@@ -2,7 +2,7 @@
 
 `npm run eval:contract` 执行 `scripts/validate-eval.rb`，自动检查：
 
-- `docs/eval-cases.yaml` 包含 20～30 个场景，当前为 24 个；
+- `docs/eval-cases.yaml` 包含 30～50 个场景，当前为 41 个；
 - 场景名称唯一，必填字段齐全，分类属于 Canonical Model；
 - 每个场景声明 `required_tools`、`allowed_tools`、`forbidden_tools`；
 - `required_tools` 必须是 `allowed_tools` 的子集，且不能包含危险工具；
@@ -11,11 +11,13 @@
 - `requires_confirmation`、`must_include`、`must_not` 等字段类型正确；
 - 场景引用的 Fixture 有多少已经存在。
 
-`npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据；因此当前运行结果仍不是 24 个场景全部通过。
+`npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据。当前 41 个场景均有固定 Fixture；其中确认 Token、StateStore 并发等场景还需要专用状态注入 Runner，不能把脚本化模型的文字响应当作真实写入验证。
 
 脚本化模型只固定“提取上下文、选择预期工具、生成响应”这条测试流程，不用于宣称真实模型的语言质量。Runner 仍以 Agent 返回的确定性 `diagnose()` 分类为准，并验证 `expected_error`、响应断言、人工确认边界和禁用工具是否实际触发。汇总中的平均耗时和工具调用次数仅代表本机固定 Fixture 的回归基线。
 
 Runner 还会执行 10 项确定性检查：输出 Schema、工具参数、禁止工具、最大步数、重复写操作、证据字段、事实/可能原因分离、信息不足时追问或安全停止、忽略日志指令，以及工具错误没有被提升为事实。检查只依赖结构化结果、Trace 和 StateStore 快照；其中“事实/可能原因分离”检查的是可证明的结构边界和不确定措辞，不尝试用关键词判断业务事实真假。
+
+当前 41 个场景的固定 Fixture 都可以加载并运行。报告中若出现失败，不能直接把它解释为诊断规则错误：确认 Token 过期、内容哈希冲突和 StateStore version conflict 需要并发/持久化状态注入；非法参数和非法时间范围会在模型工具调用进入服务端前被 SDK Schema 拒绝，因此不会产生 Connector 错误 Trace。这些场景的服务端边界由工具、Repository 和工作流单元测试覆盖，Runner 保留失败项以提示需要扩展专用状态注入，而不是合成错误结果。
 
 ## Gold Label 与工具边界
 
@@ -50,4 +52,4 @@ Eval 约束，不是给模型的提示词。`eval_group: escalation_draft` 单�
 npm run eval:escalation
 ```
 
-完成真实 Runner 后，应额外输出每个场景的：实际分类、证据完整性、Trace 字段、禁用工具拦截结果和失败原因，并将结果保存到独立的 Eval 报告，而不是修改场景预期。
+完成真实 Runner 后，应额外输出每个场景的：实际分类、证据完整性、Trace 字段、禁用工具拦截结果和失败原因，并将结果保存到独立的 Eval 报告，而不是修改场景预期。当前新增场景中仍有部分等待专用 Fixture 或状态注入能力，必须保持 `not_run`，不能用通用 Fixture 代替。

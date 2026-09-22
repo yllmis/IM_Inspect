@@ -1,0 +1,43 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "unsupported_delivery_events",
+    "description": "连接器不支持独立投递事件查询",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_unsupported_delivery",
+    "receiverId": "user_unsupported_delivery",
+    "status": "persisted",
+    "exists": true,
+    "persisted": true,
+    "evidence": [
+      {
+        "id": "fixture:unsupported_delivery_events:persisted",
+        "source": "fixture:unsupported_delivery_events",
+        "kind": "message",
+        "observedAt": "2026-09-02T10:00:00Z",
+        "field": "persisted",
+        "value": true
+      }
+    ]
+  },
+  "deliveries": [],
+  "connection": null,
+  "goldLabel": {
+    "classification": "insufficient_data",
+    "requiredEvidenceKinds": ["message"]
+  },
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": {
+      "kind": "unsupported",
+      "capability": "deliveryEvents"
+    },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

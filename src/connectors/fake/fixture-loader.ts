@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 
+import { FindMatchSchema } from "../connector";
 import { ConnectionFactSchema } from "../../domain/connection";
 import { DeliveryFactSchema } from "../../domain/delivery";
 import { DiagnosisClassificationSchema } from "../../domain/diagnosis";
@@ -67,11 +68,14 @@ export const FixtureSchema = z
     fixtureVersion: z.literal(1),
     source: FixtureSourceSchema,
     message: MessageFactSchema,
+    // 多匹配场景使用独立候选列表；message 仍是工具按 messageId 查询的主记录。
+    lookupMatches: z.array(FindMatchSchema).max(20).optional(),
     deliveries: z.array(DeliveryFactSchema),
     connection: ConnectionFactSchema.nullable(),
     goldLabel: FixtureGoldLabelSchema.optional(),
     behavior: z
       .object({
+        findUserOrMessage: FixtureBehaviorSchema.optional(),
         getMessageStatus: FixtureBehaviorSchema,
         getDeliveryEvents: FixtureBehaviorSchema,
         getConnectionStatus: FixtureBehaviorSchema,

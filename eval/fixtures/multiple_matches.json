@@ -1,0 +1,63 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "multiple_matches",
+    "description": "受控查询返回两个候选消息，不能自动选择",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_match_a",
+    "receiverId": "user_multi",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "lookupMatches": [
+    {
+      "entityType": "message",
+      "userId": "user_multi",
+      "displayName": "小王",
+      "messageId": "msg_match_a",
+      "observedAt": "2026-09-02T09:00:00Z",
+      "evidence": [
+        {
+          "id": "fixture:multiple_matches:candidate_a",
+          "source": "fixture:multiple_matches",
+          "kind": "message",
+          "observedAt": "2026-09-02T09:00:00Z",
+          "field": "message_lookup",
+          "value": "candidate_a"
+        }
+      ]
+    },
+    {
+      "entityType": "message",
+      "userId": "user_multi",
+      "displayName": "小王",
+      "messageId": "msg_match_b",
+      "observedAt": "2026-09-02T09:30:00Z",
+      "evidence": [
+        {
+          "id": "fixture:multiple_matches:candidate_b",
+          "source": "fixture:multiple_matches",
+          "kind": "message",
+          "observedAt": "2026-09-02T09:30:00Z",
+          "field": "message_lookup",
+          "value": "candidate_b"
+        }
+      ]
+    }
+  ],
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "tool_timeout",
+    "description": "消息状态查询超时，没有产生消息事实",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_tool_timeout",
+    "receiverId": "user_tool_timeout",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": {
+      "kind": "error",
+      "code": "timeout",
+      "message": "message status query timed out",
+      "retryable": true
+    },
+    "getDeliveryEvents": { "kind": "success" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}

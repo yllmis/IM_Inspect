@@ -1,0 +1,45 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "kind": "fixture",
+    "name": "multiple_message_matches_with_time_range",
+    "description": "时间范围内有多个候选消息",
+    "observedAt": "2026-09-02T10:00:00Z"
+  },
+  "message": {
+    "messageId": "msg_match_a",
+    "receiverId": "user_multi",
+    "status": "unknown",
+    "exists": true,
+    "persisted": null,
+    "evidence": []
+  },
+  "lookupMatches": [
+    {
+      "entityType": "message",
+      "userId": "user_multi",
+      "conversationId": "conversation_multi",
+      "messageId": "msg_match_a",
+      "observedAt": "2026-09-02T09:00:00Z",
+      "evidence": []
+    },
+    {
+      "entityType": "message",
+      "userId": "user_multi",
+      "conversationId": "conversation_multi",
+      "messageId": "msg_match_b",
+      "observedAt": "2026-09-02T09:30:00Z",
+      "evidence": []
+    }
+  ],
+  "deliveries": [],
+  "connection": null,
+  "behavior": {
+    "getMessageStatus": { "kind": "success" },
+    "getDeliveryEvents": { "kind": "empty" },
+    "getConnectionStatus": {
+      "kind": "unsupported",
+      "capability": "historicalPresence"
+    }
+  }
+}
