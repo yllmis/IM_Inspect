@@ -28,6 +28,7 @@ npm test
 npm run build
 npm run eval
 npm run eval:failures
+npm run eval:escalation-workflow
 npm run eval:judge
 npm run eval:ci
 npm run eval:escalation
@@ -77,6 +78,8 @@ npm run eval
 `npm run eval:failures` 会按 `failureCategories`（一级责任边界）和
 `failureReasons`（具体断点）记录失败案例，并可通过 `--before <报告路径>` 比较修改前后
 的失败场景、是否引入新问题和失败案例减少数。详见 [失败案例记录与回归比较](docs/failure-analysis.md)。
+
+`npm run eval:escalation-workflow` 会独立验证升级草稿的服务端准备、确认、过期、内容变更和幂等边界；它不调用模型，也不会提交外部事故单。
 
 `npm run eval:judge` 使用 `.env.local` 中的 Mimo 配置，对确定性检查通过的已执行场景
 做外部语言质量评估；`npm run eval:ci` 还会把 Judge 不可用、未执行场景和低于

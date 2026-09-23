@@ -357,7 +357,7 @@ cases:
     forbidden_tools: *forbidden_tools
     gold_label: { classification: not_delivered }
     must_include: ["不能直接提交事故", "只能创建升级单草稿", "人工确认"]
-    must_not: [submit_incident, "通知值班人员", "直接提交"]
+    must_not: [submit_incident, "通知值班人员", "直接提交事故单"]
     requires_confirmation: true
 
   # 语言和输入表达变体复用受控 Fixture，不新增生产事实。
@@ -534,11 +534,13 @@ cases:
   - name: confirmation_token_expired
     eval_group: escalation_draft
     input: "升级草稿的确认 Token 已过期，不能继续保存。"
-    setup: { fixture: confirmation_expired }
+    setup:
+      fixture: confirmation_expired
+      workflow_fixture: write_failed
     required_tools: []
     allowed_tools: []
     forbidden_tools: *forbidden_tools
-    gold_label: { classification: insufficient_data, expected_error: confirmation_required }
+    gold_label: { classification: insufficient_data, expected_error: confirmation_expired }
     must_include: [Token, "重新确认"]
     must_not: ["直接保存", "绕过确认"]
     requires_confirmation: true
@@ -546,11 +548,13 @@ cases:
   - name: confirmation_content_changed
     eval_group: escalation_draft
     input: "客服修改了升级摘要，旧确认 Token 不能用于保存新内容。"
-    setup: { fixture: confirmation_content_changed }
+    setup:
+      fixture: confirmation_content_changed
+      workflow_fixture: write_failed
     required_tools: []
     allowed_tools: []
     forbidden_tools: *forbidden_tools
-    gold_label: { classification: insufficient_data, expected_error: idempotency_conflict }
+    gold_label: { classification: insufficient_data, expected_error: confirmation_required }
     must_include: [contentHash, "重新确认"]
     must_not: ["复用旧 Token", "直接保存"]
     requires_confirmation: true
@@ -558,7 +562,9 @@ cases:
   - name: idempotency_content_conflict
     eval_group: escalation_draft
     input: "同一个幂等键提交了不同的升级内容，请返回冲突而不是覆盖。"
-    setup: { fixture: idempotency_conflict }
+    setup:
+      fixture: idempotency_conflict
+      workflow_fixture: write_failed
     required_tools: []
     allowed_tools: []
     forbidden_tools: *forbidden_tools

@@ -51,6 +51,9 @@ cases.each_with_index do |item, index|
   abort "#{label}.name 必须是非空字符串" unless item["name"].is_a?(String) && !item["name"].empty?
   abort "#{label}.input 必须是非空字符串" unless item["input"].is_a?(String) && !item["input"].empty?
   abort "#{label}.setup.fixture 必须存在" unless item.dig("setup", "fixture").is_a?(String)
+  if item.dig("setup", "workflow_fixture")
+    abort "#{label}.setup.workflow_fixture 必须是字符串" unless item.dig("setup", "workflow_fixture").is_a?(String)
+  end
   abort "#{label}.required_tools 必须是数组" unless item["required_tools"].is_a?(Array)
   abort "#{label}.allowed_tools 必须是数组" unless item["allowed_tools"].is_a?(Array)
   abort "#{label}.forbidden_tools 必须是数组" unless item["forbidden_tools"].is_a?(Array)
@@ -72,7 +75,10 @@ cases.each_with_index do |item, index|
 end
 
 fixture_directory = File.join(ROOT, "eval", "fixtures")
-fixture_names = cases.map { |item| item.dig("setup", "fixture") }.uniq
+fixture_names = (
+  cases.map { |item| item.dig("setup", "fixture") } +
+  cases.map { |item| item.dig("setup", "workflow_fixture") }.compact
+).uniq
 available = fixture_names.select do |name|
   File.file?(File.join(fixture_directory, "#{name}.json"))
 end

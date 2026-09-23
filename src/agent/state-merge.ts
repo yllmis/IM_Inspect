@@ -94,6 +94,17 @@ export interface MergeToolResultInput {
   cached?: boolean;
 }
 
+/**
+ * SDK 在调用 ToolRegistry 之前拒绝非法工具参数时，不能走普通成功结果合并。
+ * 这个投影只保存“调用被拒绝”和安全错误，不把未经 Schema 校验的参数写入事实。
+ */
+export interface RecordToolValidationErrorInput {
+  toolName: DiagnosticToolName;
+  rawArgs: unknown;
+  response: ToolResponse<unknown>;
+  calledAt?: Date;
+}
+
 export class StateMergeError extends Error {
   constructor(
     readonly code: "invalid_tool_result" | "state_capacity_exceeded",
@@ -395,6 +406,43 @@ export function mergeToolResult(
   }
 
   return { state: parseMergedState(next), changed: true };
+}
+
+export function recordToolValidationError(
+  rawState: AgentSessionState,
+  input: RecordToolValidationErrorInput,
+): StateMutationResult {
+  const state = AgentSessionStateSchema.parse(rawState);
+  const response = ToolResponseSchema.parse(input.response);
+  if (response.ok) {
+    throw new StateMergeError(
+      "invalid_tool_result",
+      "tool validation projection requires a failed response",
+    );
+  }
+  const calledAt = (input.calledAt ?? new Date()).toISOString();
+  const calledTool: CalledToolSummary = {
+    toolName: input.toolName,
+    inputHash: hashToolInput(input.toolName, input.rawArgs),
+    outcome: "error",
+    errorCode: response.error.code,
+    calledAt,
+  };
+  const next = AgentSessionStateSchema.parse({
+    ...state,
+    calledTools: takeRecent([...state.calledTools, calledTool], 20),
+    toolErrors: takeRecent(
+      [
+        ...state.toolErrors,
+        {
+          tool: input.toolName,
+          error: sanitizeToolError(response.error),
+        },
+      ],
+      20,
+    ),
+  });
+  return { state: next, changed: true };
 }
 
 export function mergeDiagnosisResult(

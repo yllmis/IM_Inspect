@@ -128,6 +128,40 @@ describe("deterministic Eval checks", () => {
     expect(evaluate(result).toolParameters).toBe(false);
   });
 
+  it("accepts invalid parameters only when the server records a rejection", () => {
+    const result = validResult();
+    result.toolCalls.push({
+      name: "get_message_status",
+      args: {},
+      cached: false,
+      response: {
+        ok: false,
+        error: {
+          code: "invalid_argument",
+          message: "tool arguments are invalid",
+          retryable: false,
+        },
+        meta: {
+          requestId: "request_eval",
+          runId: "run_eval",
+          durationMs: 1,
+          attempts: 1,
+          retryDelaysMs: [],
+          cached: false,
+          truncated: false,
+        },
+      },
+    });
+    result.trace.steps = [
+      {
+        ...toolStep(1, "get_message_status"),
+        outcome: "blocked",
+        errorCode: "invalid_argument",
+      },
+    ];
+    expect(evaluate(result).toolParameters).toBe(true);
+  });
+
   it("rejects forbidden tools, excessive steps, and repeated writes", () => {
     const result = validResult();
     result.steps = 9;

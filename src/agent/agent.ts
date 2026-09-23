@@ -13,7 +13,7 @@ import {
   MessageLookupInputSchema,
 } from "../connectors/connector";
 import { diagnose } from "../domain/diagnose";
-import { DiagnosisResult } from "../domain/diagnosis";
+import { DiagnosisResult, DiagnosisToolNameSchema } from "../domain/diagnosis";
 import { createToolContext, ToolContext, ToolResponse } from "../tools/context";
 import { ToolRegistry } from "../tools/registry";
 import { buildDiagnosisInput } from "./diagnosis-input";
@@ -50,6 +50,7 @@ import {
   mergeCandidateContext,
   mergeDiagnosisResult,
   mergeToolResult,
+  recordToolValidationError,
   resolveTargetSwitch,
   TargetSwitchResolutionError,
 } from "./state-merge";
@@ -370,6 +371,37 @@ async function runAgentLoop(
         state.diagnosisResult !== null &&
         state.diagnosisResult.classification !== "insufficient_data",
     ],
+    // AI SDK 的 Schema 拒绝可能发生在 ToolRegistry 之前；把它投影为受控的
+    // invalid_argument Trace，避免“没有工具结果”被误解成业务事实。
+    repairToolCall: async ({ toolCall }) => {
+      const rawArgs = decodeToolCallInput(toolCall.input);
+      const response = await input.registry.execute(
+        toolCall.toolName,
+        rawArgs,
+        input.toolContext,
+      );
+      traceRecorder.syncToolTraces(input.toolContext.traces);
+      if (DiagnosisToolNameSchema.safeParse(toolCall.toolName).success) {
+        const toolName = DiagnosisToolNameSchema.parse(toolCall.toolName);
+        calls.push({
+          name: toolName,
+          args: rawArgs,
+          response,
+          cached: false,
+        });
+        state = recordToolValidationError(state, {
+          toolName,
+          rawArgs,
+          response,
+          calledAt: now(),
+        }).state;
+        state = withStatus(state, "evaluating_evidence");
+        diagnosis = refreshDiagnosis(state, input);
+      }
+      lastToolFailed = !response.ok;
+      // 不自动替换模型参数；让当前 Run 进入受控失败/追问路径。
+      return null;
+    },
     maxOutputTokens: contextBudget.maxOutputTokens,
     onStepFinish: ({ usage }) =>
       runTokenBudget.record(
@@ -585,6 +617,15 @@ function modelToolResult(
     );
   }
   return result;
+}
+
+function decodeToolCallInput(input: unknown): unknown {
+  if (typeof input !== "string") return input;
+  try {
+    return JSON.parse(input) as unknown;
+  } catch {
+    return input;
+  }
 }
 
 function executionStatus(

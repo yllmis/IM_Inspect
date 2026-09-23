@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFailureAnalysisReport,
+  classifyFailureDisposition,
   renderFailureReportMarkdown,
   type FailureSnapshot,
 } from "./failure-report";
+import type { ScenarioResult } from "./runner";
 
 function snapshot(
   statuses: Array<{
@@ -42,11 +44,31 @@ function snapshot(
       evidenceComplete: true,
       toolCallsConform: true,
       deterministicChecks: null,
+      failureDisposition: null,
     })),
   };
 }
 
 describe("failure analysis report", () => {
+  it("attributes dedicated escalation workflow passes to a generic-runner gap", () => {
+    const failedEscalation = {
+      name: "confirmation_token_expired",
+      status: "failed",
+      evalGroup: "escalation_draft",
+      failureCategories: ["tool_contract_error"],
+    } as ScenarioResult;
+
+    expect(
+      classifyFailureDisposition(
+        failedEscalation,
+        new Set(["confirmation_token_expired"]),
+      ),
+    ).toBe("eval_harness_gap");
+    expect(classifyFailureDisposition(failedEscalation, new Set())).toBe(
+      "contract_mismatch",
+    );
+  });
+
   it("compares failed cases by scenario instead of reason count", () => {
     const before = snapshot([
       {

@@ -266,6 +266,57 @@ describe("runAgent stateful loop", () => {
     expect(exposedToolNames).not.toContain("create_escalation_draft");
   });
 
+  it("records SDK-rejected tool arguments as invalid_argument Trace", async () => {
+    const runtime = testRuntime();
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        extraction("msg_delivered"),
+        toolCallResult("call_invalid_message", "get_message_status", {}),
+        responseResult("insufficient_data", "参数错误，请补充 messageId。"),
+      ],
+    });
+
+    const result = await runAgent({
+      sessionId: "session_invalid_tool_args",
+      text: "查询消息状态，但没有提供消息 ID",
+      model,
+      toolContext: runtime.context("run_invalid_tool_args"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      traceStore: runtime.traceStore,
+      now: runtime.now,
+    });
+
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]).toMatchObject({
+      name: "get_message_status",
+      response: { ok: false, error: { code: "invalid_argument" } },
+    });
+    expect(result.trace.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool",
+          name: "get_message_status",
+          outcome: "blocked",
+          errorCode: "invalid_argument",
+        }),
+      ]),
+    );
+    const saved = await runtime.store.load({
+      sessionId: "session_invalid_tool_args",
+      tenantId: "tenant_test",
+      actorId: "support_test",
+    });
+    expect(saved?.toolErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "get_message_status",
+          error: expect.objectContaining({ code: "invalid_argument" }),
+        }),
+      ]),
+    );
+  });
+
   it("keeps only working state across turns and reuses the same session", async () => {
     const runtime = testRuntime();
     const firstModel = new MockLanguageModelV4({

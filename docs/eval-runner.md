@@ -15,13 +15,15 @@
 
 `npm run eval:failures` 在同一执行结果上增加失败案例记录。它用稳定的一级分类统计责任边界，同时保留具体 `failureReasons`；使用 `--before <报告路径>` 可以比较修改前后的失败场景数、分类变化、新问题和失败案例减少数。报告写入 `eval/reports/failure-analysis-*.json` 和 `.md`，不会写入完整消息正文、凭证或 Token。分类边界和运行示例见 [`failure-analysis.md`](./failure-analysis.md)。
 
+`npm run eval:escalation-workflow` 专门运行升级草稿的服务端 `prepare/confirm` 流程，覆盖重复草稿、过期 Token、内容修改和幂等冲突。它不调用模型，也不提交外部事故单；结果写入 `eval/reports/escalation-workflow-*.json`。通用 Runner 中升级场景的确认边界失败，需要结合该报告判断是否只是测试工具缺口。
+
 六组架构对照实验通过 `npm run eval:ablation` 运行，实验协议和边界见 [`ablation-experiments.md`](./ablation-experiments.md)。其中标记为 `boundary_simulation` 的结果只说明接口和代码约束，不代表真实外部模型质量或生产性能。
 
 脚本化模型只固定“提取上下文、选择预期工具、生成响应”这条测试流程，不用于宣称真实模型的语言质量。Runner 仍以 Agent 返回的确定性 `diagnose()` 分类为准，并验证 `expected_error`、响应断言、人工确认边界和禁用工具是否实际触发。汇总中的平均耗时和工具调用次数仅代表本机固定 Fixture 的回归基线。
 
 Runner 还会执行 10 项确定性检查：输出 Schema、工具参数、禁止工具、最大步数、重复写操作、证据字段、事实/可能原因分离、信息不足时追问或安全停止、忽略日志指令，以及工具错误没有被提升为事实。检查只依赖结构化结果、Trace 和 StateStore 快照；其中“事实/可能原因分离”检查的是可证明的结构边界和不确定措辞，不尝试用关键词判断业务事实真假。
 
-当前 41 个场景的固定 Fixture 都可以加载并运行。报告中若出现失败，不能直接把它解释为诊断规则错误：确认 Token 过期、内容哈希冲突和 StateStore version conflict 需要并发/持久化状态注入；非法参数和非法时间范围会在模型工具调用进入服务端前被 SDK Schema 拒绝，因此不会产生 Connector 错误 Trace。这些场景的服务端边界由工具、Repository 和工作流单元测试覆盖，Runner 保留失败项以提示需要扩展专用状态注入，而不是合成错误结果。
+当前 41 个场景的固定 Fixture 都可以加载并运行。工具参数和非法时间范围在 SDK Schema 校验阶段被拒绝；`repairToolCall` 会将拒绝转成服务端标准 `invalid_argument` 结果，并写入结构化 Trace，因此 Eval 可以验证实际错误结果，而不是只看模型是否发出了参数错误的调用。升级场景由专用 `eval:escalation-workflow` 执行 `prepare/confirm`，验证过期 Token、内容变化和幂等冲突。失败报告会把“通用 Runner 失败、专用升级 Runner 通过”的案例标记为 `eval_harness_gap`，提醒这是 Runner 覆盖边界，不是已经证实的产品安全缺陷。StateStore 并发版本冲突仍由 Repository/StateStore 测试验证；通用脚本化 Agent Eval 不模拟真实并发。
 
 ## Gold Label 与工具边界
 
@@ -56,4 +58,4 @@ Eval 约束，不是给模型的提示词。`eval_group: escalation_draft` 单�
 npm run eval:escalation
 ```
 
-完成真实 Runner 后，应额外输出每个场景的：实际分类、证据完整性、Trace 字段、禁用工具拦截结果和失败原因，并将结果保存到独立的 Eval 报告，而不是修改场景预期。当前新增场景中仍有部分等待专用 Fixture 或状态注入能力，必须保持 `not_run`，不能用通用 Fixture 代替。
+升级流程报告保存服务端 `prepare/confirm` 的结构化结果，通用 Runner 报告保存 Agent Loop 的工具选择与回复检查。两者关注不同阶段，失败报告通过场景名关联它们；不会通过修改 Gold Label 或 Fixture 预期来消除失败。

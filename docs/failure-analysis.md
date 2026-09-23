@@ -6,6 +6,7 @@ Eval 失败不能只显示一个总分。一个场景可能同时出现多个具
 
 - `failureCategories`：稳定的一级责任边界，用于汇总和回归门禁。
 - `failureReasons`：具体断点，用于定位测试或实现问题。
+- `failureDisposition`：二次归因，区分产品缺陷、测试工具缺口、契约不一致和 Fixture 错误。
 
 当前一级分类固定为：
 
@@ -47,6 +48,8 @@ npm run eval:failures -- \
 
 报告记录修改前失败场景数、修改后失败场景数、失败案例减少数、是否引入新问题、一级分类变化，以及每个失败案例的具体原因。完整 Agent 输出不会写入该报告。
 
+升级草稿场景还会同时运行专用 `prepare/confirm` Runner。如果专用 Runner 已通过，而通用诊断 Runner 仍报告 `confirmation_boundary_mismatch`，该案例标记为 `eval_harness_gap`，不能直接当成 Agent 产品缺陷。
+
 ## 当前基线
 
 本次只增加失败记录和比较机制，没有修改 Agent 诊断行为，因此基线比较应诚实显示：
@@ -57,4 +60,3 @@ npm run eval:failures -- \
 - 是否引入新问题：否。
 
 这不是“功能优化已经完成”的声明。下一步应针对报告中的具体失败案例逐个决定是否调整场景契约、工具行为或 Agent 边界，再重新生成前后报告。不能通过修改 Gold Label、忽略失败原因或把工具错误转换成事实来提高通过率。
-

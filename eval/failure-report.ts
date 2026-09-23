@@ -28,6 +28,16 @@ export const FailureCaseSnapshotSchema = z
     evidenceComplete: z.boolean().nullable(),
     toolCallsConform: z.boolean().nullable(),
     deterministicChecks: z.record(z.boolean()).nullable(),
+    /** 失败属于产品实现、测试工具缺口还是 Fixture 配置问题。 */
+    failureDisposition: z
+      .enum([
+        "product_bug",
+        "eval_harness_gap",
+        "contract_mismatch",
+        "fixture_error",
+      ])
+      .nullable()
+      .default(null),
   })
   .strict();
 export type FailureCaseSnapshot = z.infer<typeof FailureCaseSnapshotSchema>;
@@ -76,11 +86,39 @@ export interface FailureReportOptions {
   before?: FailureSnapshot | null;
   description?: string;
   modifiedFiles?: string[];
+  specializedWorkflowPassedNames?: ReadonlySet<string>;
+}
+
+export function classifyFailureDisposition(
+  item: ScenarioResult,
+  specializedWorkflowPassedNames: ReadonlySet<string>,
+):
+  | "product_bug"
+  | "eval_harness_gap"
+  | "contract_mismatch"
+  | "fixture_error"
+  | null {
+  if (item.status !== "failed") return null;
+  if (item.failureCategories.includes("fixture_error")) return "fixture_error";
+  if (
+    item.evalGroup === "escalation_draft" &&
+    specializedWorkflowPassedNames.has(item.name)
+  ) {
+    return "eval_harness_gap";
+  }
+  if (item.failureCategories.includes("tool_contract_error")) {
+    return "contract_mismatch";
+  }
+  return "product_bug";
 }
 
 export function snapshotResults(
   results: ScenarioResult[],
-  options: { generatedAt?: Date; gitCommit?: string } = {},
+  options: {
+    generatedAt?: Date;
+    gitCommit?: string;
+    specializedWorkflowPassedNames?: ReadonlySet<string>;
+  } = {},
 ): FailureSnapshot {
   const generatedAt = (options.generatedAt ?? new Date()).toISOString();
   return {
@@ -101,6 +139,10 @@ export function snapshotResults(
       evidenceComplete: item.evidenceComplete,
       toolCallsConform: item.toolCallsConform,
       deterministicChecks: item.deterministicChecks,
+      failureDisposition: classifyFailureDisposition(
+        item,
+        options.specializedWorkflowPassedNames ?? new Set(),
+      ),
     })),
   };
 }
@@ -255,6 +297,7 @@ export function renderFailureReportMarkdown(
         `- Fixture：${item.fixtureName}`,
         `- 状态：${item.status}`,
         `- 分类：${item.failureCategories.join(", ") || "未分类"}`,
+        `- 失败归因：${item.failureDisposition ?? "未归因"}`,
         `- 具体原因：${item.failureReasons.join(", ") || "未记录"}`,
         `- 期望分类：${item.expectedClassification}`,
         `- 实际分类：${item.actualClassification ?? "未产生"}`,
@@ -266,6 +309,7 @@ export function renderFailureReportMarkdown(
     "## 解释",
     "",
     "一级分类用于统计责任边界，failureReasons 用于定位具体断点。`missing_data` 表示被测场景确实缺少业务数据；`fixture_error` 表示测试数据或契约本身有问题，二者不能互相替代。",
+    "失败归因结合专用流程 Runner 判断根因。`failureCategories` 是通用 Runner 观察到的失败检查类型；当归因为 `eval_harness_gap` 时，该类型表示通用 Runner 尚未覆盖此流程，不能单独据此认定产品缺陷。",
     "",
   );
   return `${lines.join("\n")}\n`;
@@ -304,7 +348,18 @@ function argumentValue(name: string): string | undefined {
 async function main(): Promise<void> {
   const generatedAt = new Date();
   const results = await runEvalCases();
-  const after = snapshotResults(results, { generatedAt });
+  // 普通 Runner 不执行 prepare/confirm；用专用 Runner 的结果识别测试工具缺口。
+  const { runEscalationEvalCases } = await import("./escalation-runner");
+  const escalationResults = await runEscalationEvalCases();
+  const specializedWorkflowPassedNames = new Set(
+    escalationResults
+      .filter((item) => item.status === "passed")
+      .map((item) => item.name),
+  );
+  const after = snapshotResults(results, {
+    generatedAt,
+    specializedWorkflowPassedNames,
+  });
   const beforePath = argumentValue("--before");
   const before = beforePath ? readBeforeSnapshot(beforePath) : null;
   const report = buildFailureAnalysisReport(after, {
