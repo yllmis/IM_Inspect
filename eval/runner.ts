@@ -511,6 +511,12 @@ async function main(): Promise<void> {
       ? groupArgument
       : undefined;
   const results = await runEvalCases({ group });
+  const { buildEvalResultReport, writeEvalResultReport } =
+    await import("./result-report");
+  const document = loadEvalDocument();
+  const written = writeEvalResultReport(
+    buildEvalResultReport(results, document),
+  );
 
   console.table(
     results.map((item) => ({
@@ -528,6 +534,8 @@ async function main(): Promise<void> {
   );
   console.log("Eval summary:");
   console.log(JSON.stringify(summarize(results), null, 2));
+  console.log(`Eval JSON 已写入：${written.jsonPath}`);
+  console.log(`Eval Markdown 已写入：${written.markdownPath}`);
 }
 
 function collectUntrustedPayloads(value: unknown): string[] {

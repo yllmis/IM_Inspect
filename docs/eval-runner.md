@@ -11,7 +11,7 @@
 - `requires_confirmation`、`must_include`、`must_not` 等字段类型正确；
 - 场景引用的 Fixture 有多少已经存在。
 
-`npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据。当前 41 个场景均有固定 Fixture；其中确认 Token、StateStore 并发等场景还需要专用状态注入 Runner，不能把脚本化模型的文字响应当作真实写入验证。
+`npm run eval` 执行 `eval/runner.ts`。它对已有 Fixture 使用脚本化模型运行真实 Agent Loop，收集工具调用、最终分类、证据、Trace 和危险工具结果，并输出每个场景的结果表及汇总指标。命令同时写入 `eval/reports/eval-*.json` 和 `eval/reports/eval-*.md`，其中包含字段提取准确率、诊断分类准确率、证据完整率、工具调用符合率、危险操作拦截率、平均耗时和平均工具调用次数。缺少 Fixture 的场景记为 `not_run`，不会伪造分类或证据。当前 41 个场景均有固定 Fixture；其中确认 Token、StateStore 并发等场景还需要专用状态注入 Runner，不能把脚本化模型的文字响应当作真实写入验证。
 
 `npm run eval:failures` 在同一执行结果上增加失败案例记录。它用稳定的一级分类统计责任边界，同时保留具体 `failureReasons`；使用 `--before <报告路径>` 可以比较修改前后的失败场景数、分类变化、新问题和失败案例减少数。报告写入 `eval/reports/failure-analysis-*.json` 和 `.md`，不会写入完整消息正文、凭证或 Token。分类边界和运行示例见 [`failure-analysis.md`](./failure-analysis.md)。
 
