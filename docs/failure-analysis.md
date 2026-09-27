@@ -46,7 +46,7 @@ npm run eval:failures -- \
 - `eval/reports/failure-analysis-*.json`：机器可读快照和前后差异；
 - `eval/reports/failure-analysis-*.md`：面向复盘的失败列表。
 
-报告记录修改前失败场景数、修改后失败场景数、失败案例减少数、是否引入新问题、一级分类变化，以及每个失败案例的具体原因。完整 Agent 输出不会写入该报告。
+报告还保存三种完整性指纹：`suiteHash`（场景契约）、`fixtureHash`（固定测试数据）和 `goldLabelHash`（期望答案），并记录场景新增/删除情况。前后失败数量只在两次报告的共同场景上比较；如果 Fixture 或 Gold Label 发生变化，报告会标记“比较不同口径”，不能直接宣称修复成功。完整 Agent 输出不会写入该报告。
 
 升级草稿场景还会同时运行专用 `prepare/confirm` Runner。如果专用 Runner 已通过，而通用诊断 Runner 仍报告 `confirmation_boundary_mismatch`，该案例标记为 `eval_harness_gap`，不能直接当成 Agent 产品缺陷。
 

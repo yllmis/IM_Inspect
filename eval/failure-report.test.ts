@@ -29,6 +29,10 @@ function snapshot(
     generatedAt: "2026-09-22T08:00:00.000Z",
     gitCommit: "before",
     command: "npm run eval:failures",
+    suiteHash: "unknown",
+    fixtureHash: "unknown",
+    goldLabelHash: "unknown",
+    caseNames: statuses.map((item) => item.name).sort(),
     summary: {
       failureCategories: {},
     },
@@ -102,11 +106,48 @@ describe("failure analysis report", () => {
     });
 
     expect(report.change.failedCaseCountBefore).toBe(2);
-    expect(report.change.failedCaseCountAfter).toBe(2);
-    expect(report.change.failedCasesReduced).toBe(0);
-    expect(report.change.newProblemsIntroduced).toBe(true);
+    expect(report.change.failedCaseCountAfter).toBe(1);
+    expect(report.change.failedCasesReduced).toBe(1);
+    expect(report.change.newProblemsIntroduced).toBe(false);
     expect(report.change.failureCategoryDelta.security_policy_error).toBe(-1);
-    expect(report.change.failureCategoryDelta.fixture_error).toBe(1);
+    expect(report.change.failureCategoryDelta.fixture_error).toBe(0);
+  });
+
+  it("compares only common cases and reports changed test inputs", () => {
+    const before = snapshot([
+      { name: "same", status: "failed", categories: ["model_error"] },
+      { name: "removed", status: "failed", categories: ["model_error"] },
+    ]);
+    const after = snapshot([
+      { name: "same", status: "passed" },
+      { name: "added", status: "failed", categories: ["fixture_error"] },
+    ]);
+    const report = buildFailureAnalysisReport(after, { before });
+
+    expect(report.change.failedCaseCountBefore).toBe(1);
+    expect(report.change.failedCaseCountAfter).toBe(0);
+    expect(report.change.failedCasesReduced).toBe(1);
+    expect(report.change.addedCases).toEqual(["added"]);
+    expect(report.change.removedCases).toEqual(["removed"]);
+    expect(report.change.newProblemsIntroduced).toBe(false);
+    expect(report.change.comparisonComparable).toBe(false);
+  });
+
+  it("requires suite, fixture, and gold label fingerprints to match", () => {
+    const before = snapshot([{ name: "same", status: "failed" }]);
+    const after = snapshot([{ name: "same", status: "passed" }]);
+    const report = buildFailureAnalysisReport(after, {
+      before: {
+        ...before,
+        suiteHash: "a".repeat(64),
+        fixtureHash: "b".repeat(64),
+        goldLabelHash: "c".repeat(64),
+      },
+    });
+    expect(report.change.comparisonComparable).toBe(false);
+    expect(report.change.suiteChanged).toBe(true);
+    expect(report.change.fixtureChanged).toBe(true);
+    expect(report.change.goldLabelChanged).toBe(true);
   });
 
   it("renders the change and each remaining failed case", () => {

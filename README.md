@@ -77,7 +77,8 @@ npm run eval
 
 `npm run eval:failures` 会按 `failureCategories`（一级责任边界）和
 `failureReasons`（具体断点）记录失败案例，并可通过 `--before <报告路径>` 比较修改前后
-的失败场景、是否引入新问题和失败案例减少数。详见 [失败案例记录与回归比较](docs/failure-analysis.md)。
+的失败场景、是否引入新问题和失败案例减少数。报告同时记录场景、Fixture 和 Gold Label
+指纹，防止通过修改测试数据制造失败减少。详见 [失败案例记录与回归比较](docs/failure-analysis.md)。
 
 `npm run eval:escalation-workflow` 会独立验证升级草稿的服务端准备、确认、过期、内容变更和幂等边界；它不调用模型，也不会提交外部事故单。
 

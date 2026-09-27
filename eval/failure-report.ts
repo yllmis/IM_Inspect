@@ -9,7 +9,13 @@ import {
   FailureCategorySchema,
   type FailureCategory,
 } from "../src/eval/failure-categories";
-import { runEvalCases, summarize, type ScenarioResult } from "./runner";
+import {
+  loadEvalDocument,
+  runEvalCases,
+  summarize,
+  type ScenarioResult,
+} from "./runner";
+import { computeEvalIntegrity, type EvalIntegrity } from "./integrity";
 
 /**
  * 失败快照只保存可审计摘要，不保存 Agent 完整输出、消息正文、Token 或凭证。
@@ -50,6 +56,22 @@ export const FailureSnapshotSchema = z
     generatedAt: z.string().datetime({ offset: true }),
     gitCommit: z.string().min(1),
     command: z.literal("npm run eval:failures"),
+    suiteHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .or(z.literal("unknown"))
+      .default("unknown"),
+    fixtureHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .or(z.literal("unknown"))
+      .default("unknown"),
+    goldLabelHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .or(z.literal("unknown"))
+      .default("unknown"),
+    caseNames: z.array(z.string().min(1)).default([]),
     summary: SummarySchema,
     cases: z.array(FailureCaseSnapshotSchema),
   })
@@ -73,6 +95,12 @@ export const FailureAnalysisReportSchema = z
         failedCaseCountAfter: z.number().int().nonnegative(),
         failedCasesReduced: z.number().int().nullable(),
         failureCategoryDelta: FailureCategoryDeltaSchema,
+        comparisonComparable: z.boolean().nullable().default(null),
+        suiteChanged: z.boolean().nullable().default(null),
+        fixtureChanged: z.boolean().nullable().default(null),
+        goldLabelChanged: z.boolean().nullable().default(null),
+        addedCases: z.array(z.string().min(1)).default([]),
+        removedCases: z.array(z.string().min(1)).default([]),
       })
       .strict(),
     before: FailureSnapshotSchema.nullable(),
@@ -87,6 +115,7 @@ export interface FailureReportOptions {
   description?: string;
   modifiedFiles?: string[];
   specializedWorkflowPassedNames?: ReadonlySet<string>;
+  integrity?: EvalIntegrity;
 }
 
 export function classifyFailureDisposition(
@@ -118,6 +147,7 @@ export function snapshotResults(
     generatedAt?: Date;
     gitCommit?: string;
     specializedWorkflowPassedNames?: ReadonlySet<string>;
+    integrity?: EvalIntegrity;
   } = {},
 ): FailureSnapshot {
   const generatedAt = (options.generatedAt ?? new Date()).toISOString();
@@ -126,6 +156,11 @@ export function snapshotResults(
     generatedAt,
     gitCommit: options.gitCommit ?? readGitCommit(),
     command: "npm run eval:failures",
+    suiteHash: options.integrity?.suiteHash ?? "unknown",
+    fixtureHash: options.integrity?.fixtureHash ?? "unknown",
+    goldLabelHash: options.integrity?.goldLabelHash ?? "unknown",
+    caseNames:
+      options.integrity?.caseNames ?? results.map((item) => item.name).sort(),
     summary: summarize(results),
     cases: results.map((item) => ({
       name: item.name,
@@ -171,8 +206,16 @@ function categoryDelta(
   before: FailureSnapshot | null,
   after: FailureSnapshot,
 ): Record<FailureCategory, number> {
-  const afterCounts = categoryCounts(after);
-  const beforeCounts = before ? categoryCounts(before) : null;
+  const commonNames = before ? new Set(commonCaseNames(before, after)) : null;
+  const scoped = (snapshot: FailureSnapshot) =>
+    commonNames === null
+      ? snapshot
+      : {
+          ...snapshot,
+          cases: snapshot.cases.filter((item) => commonNames.has(item.name)),
+        };
+  const afterCounts = categoryCounts(scoped(after));
+  const beforeCounts = before ? categoryCounts(scoped(before)) : null;
   return Object.fromEntries(
     FAILURE_CATEGORIES.map((category) => [
       category,
@@ -187,8 +230,37 @@ function newProblemsIntroduced(
 ): boolean | null {
   if (!before) return null;
   const beforeCases = failedCaseSet(before);
+  const comparable = new Set(commonCaseNames(before, after));
   return after.cases.some(
-    (item) => item.status === "failed" && !beforeCases.has(item.name),
+    (item) =>
+      comparable.has(item.name) &&
+      item.status === "failed" &&
+      !beforeCases.has(item.name),
+  );
+}
+
+function snapshotCaseNames(snapshot: FailureSnapshot): string[] {
+  return snapshot.caseNames.length > 0
+    ? snapshot.caseNames
+    : snapshot.cases.map((item) => item.name).sort();
+}
+
+function commonCaseNames(
+  before: FailureSnapshot,
+  after: FailureSnapshot,
+): string[] {
+  const afterNames = new Set(snapshotCaseNames(after));
+  return snapshotCaseNames(before).filter((name) => afterNames.has(name));
+}
+
+function failedCaseSetForNames(
+  snapshot: FailureSnapshot,
+  names: ReadonlySet<string>,
+): Set<string> {
+  return new Set(
+    snapshot.cases
+      .filter((item) => names.has(item.name) && item.status === "failed")
+      .map((item) => item.name),
   );
 }
 
@@ -201,8 +273,31 @@ export function buildFailureAnalysisReport(
   options: FailureReportOptions = {},
 ): FailureAnalysisReport {
   const before = options.before ?? null;
-  const beforeFailed = before ? failedCaseSet(before).size : null;
-  const afterFailed = failedCaseSet(after).size;
+  const commonNames = before ? commonCaseNames(before, after) : [];
+  const commonNameSet = new Set(commonNames);
+  const beforeFailed = before
+    ? failedCaseSetForNames(before, commonNameSet).size
+    : null;
+  const afterFailed = before
+    ? failedCaseSetForNames(after, commonNameSet).size
+    : failedCaseSet(after).size;
+  const beforeNames = before
+    ? new Set(snapshotCaseNames(before))
+    : new Set<string>();
+  const afterNames = new Set(snapshotCaseNames(after));
+  const addedCases = snapshotCaseNames(after).filter(
+    (name) => !beforeNames.has(name),
+  );
+  const removedCases = before
+    ? snapshotCaseNames(before).filter((name) => !afterNames.has(name))
+    : [];
+  const comparisonComparable = before
+    ? after.suiteHash !== "unknown" &&
+      before.suiteHash !== "unknown" &&
+      after.suiteHash === before.suiteHash &&
+      after.fixtureHash === before.fixtureHash &&
+      after.goldLabelHash === before.goldLabelHash
+    : null;
   return {
     reportVersion: 1,
     generatedAt: (options.generatedAt ?? new Date()).toISOString(),
@@ -219,6 +314,21 @@ export function buildFailureAnalysisReport(
       failedCasesReduced:
         beforeFailed === null ? null : beforeFailed - afterFailed,
       failureCategoryDelta: categoryDelta(before, after),
+      comparisonComparable,
+      suiteChanged:
+        before && before.suiteHash !== "unknown"
+          ? before.suiteHash !== after.suiteHash
+          : null,
+      fixtureChanged:
+        before && before.fixtureHash !== "unknown"
+          ? before.fixtureHash !== after.fixtureHash
+          : null,
+      goldLabelChanged:
+        before && before.goldLabelHash !== "unknown"
+          ? before.goldLabelHash !== after.goldLabelHash
+          : null,
+      addedCases,
+      removedCases,
     },
     before,
     after,
@@ -262,6 +372,7 @@ export function renderFailureReportMarkdown(
     `- 生成时间：${report.generatedAt}`,
     `- Git commit：\`${report.gitCommit}\``,
     `- 执行命令：\`${report.command}\``,
+    `- 测试集指纹：\`${report.after.suiteHash}\``,
     `- 修改说明：${change.description}`,
     `- 修改文件：${change.modifiedFiles.length > 0 ? change.modifiedFiles.join(", ") : "未提供"}`,
     "",
@@ -271,6 +382,9 @@ export function renderFailureReportMarkdown(
     `- 修改后失败场景：${change.failedCaseCountAfter}`,
     `- 失败案例减少：${change.failedCasesReduced === null ? "无法比较" : change.failedCasesReduced}`,
     `- 是否引入新问题：${change.newProblemsIntroduced === null ? "无法比较" : change.newProblemsIntroduced ? "是" : "否"}`,
+    `- 比较是否同口径：${change.comparisonComparable === null ? "无基线" : change.comparisonComparable ? "是" : "否"}`,
+    `- 新增场景：${change.addedCases.length > 0 ? change.addedCases.join(", ") : "无"}`,
+    `- 删除场景：${change.removedCases.length > 0 ? change.removedCases.join(", ") : "无"}`,
     "",
     "## 一级失败分类变化",
     "",
@@ -347,7 +461,9 @@ function argumentValue(name: string): string | undefined {
 
 async function main(): Promise<void> {
   const generatedAt = new Date();
-  const results = await runEvalCases();
+  const document = loadEvalDocument();
+  const integrity = computeEvalIntegrity(document);
+  const results = await runEvalCases({ document });
   // 普通 Runner 不执行 prepare/confirm；用专用 Runner 的结果识别测试工具缺口。
   const { runEscalationEvalCases } = await import("./escalation-runner");
   const escalationResults = await runEscalationEvalCases();
@@ -358,6 +474,7 @@ async function main(): Promise<void> {
   );
   const after = snapshotResults(results, {
     generatedAt,
+    integrity,
     specializedWorkflowPassedNames,
   });
   const beforePath = argumentValue("--before");
