@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package operations;
+
+service OperationsQuery {
+  rpc FindUserReference(FindUserReferenceRequest) returns (FindUserReferenceResponse);
+  rpc GetMessageRecord(GetMessageRecordRequest) returns (GetMessageRecordResponse);
+  rpc GetMessageTimeline(GetMessageTimelineRequest) returns (GetMessageTimelineResponse);
+  rpc GetDeliveryTimeline(GetDeliveryTimelineRequest) returns (GetDeliveryTimelineResponse);
+  rpc GetConnectionObservations(GetConnectionObservationsRequest) returns (GetConnectionObservationsResponse);
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+}
+
+message FindUserReferenceRequest { string userId = 1; string nickname = 2; string phone = 3; int32 limit = 4; }
+message UserReference { string userId = 1; string displayName = 2; int32 status = 3; int64 observedAt = 4; }
+message FindUserReferenceResponse { repeated UserReference users = 1; }
+
+message GetMessageRecordRequest { string messageId = 1; }
+message GetMessageRecordResponse {
+  bool found = 1; string messageId = 2; string conversationId = 3; string senderId = 4;
+  string receiverId = 5; int64 createdAt = 6; string source = 7; int64 observedAt = 8;
+  int32 chatType = 9; int32 msgType = 10; string readState = 11; string readStateNote = 12;
+  bool eventsAvailable = 13; string note = 14;
+}
+
+message GetMessageTimelineRequest { string messageId = 1; int64 startTime = 2; int64 endTime = 3; int32 limit = 4; string cursor = 5; }
+message MessageEvent {
+  string eventId = 1; int32 eventVersion = 2; string eventType = 3; string messageId = 4;
+  string clientMessageId = 5; string correlationId = 6; string conversationId = 7; string senderId = 8;
+  string receiverId = 9; string attemptId = 10; int64 occurredAt = 11; string source = 12;
+  string errorCode = 13; int64 sequence = 14; map<string, string> metadata = 15;
+}
+message GetMessageTimelineResponse {
+  repeated MessageEvent events = 1; bool complete = 2; bool truncated = 3; string nextCursor = 4;
+  string messageId = 5; string coverageStatus = 6; uint64 eventsDropped = 7;
+}
+
+message GetDeliveryTimelineRequest { string messageId = 1; string receiverId = 2; int32 limit = 3; string cursor = 4; }
+message DeliveryEvent {
+  string eventId = 1; string eventType = 2; string messageId = 3; string receiverId = 4;
+  string attemptId = 5; int64 occurredAt = 6; string source = 7; string errorCode = 8;
+  map<string, string> metadata = 9; string evidence = 10;
+}
+message GetDeliveryTimelineResponse {
+  repeated DeliveryEvent events = 1; bool complete = 2; bool truncated = 3; string nextCursor = 4;
+  string messageId = 5; string coverageStatus = 6; uint64 eventsDropped = 7;
+}
+
+message GetConnectionObservationsRequest {
+  string userId = 1; int64 at = 2; int64 startTime = 3; int64 endTime = 4; int32 limit = 5;
+  string cursor = 6; bool includeCurrent = 7;
+}
+message ConnectionObservation { string connectionId = 1; string instanceId = 2; string state = 3; int64 observedAt = 4; string reason = 5; }
+message CurrentConnection { bool online = 1; string connectionId = 2; string instanceId = 3; int64 observedAt = 4; string source = 5; }
+message GetConnectionObservationsResponse {
+  repeated ConnectionObservation observations = 1; CurrentConnection current = 2; bool complete = 3;
+  bool truncated = 4; string nextCursor = 5; string note = 6; string coverageStatus = 7; uint64 eventsDropped = 8;
+}
+
+message GetCapabilitiesRequest {}
+message GetCapabilitiesResponse {
+  string messageRecord = 1; string messageTimeline = 2; string deliveryEvents = 3;
+  string historicalConnection = 4; string ackHistory = 5; string writeFailureEvents = 6;
+  string readConfirmation = 7; int64 observedAt = 8; string observationEnabled = 9; string ackMode = 10;
+}

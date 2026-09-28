@@ -23,6 +23,10 @@ export const GetDeliveryEventsResultSchema = z
     query: z
       .object({
         complete: z.boolean(),
+        coverageStatus: z
+          .enum(["complete", "partial", "unknown"])
+          .default("complete"),
+        eventsDropped: z.number().int().nonnegative().default(0),
         effectiveTimeRange: DeliveryTimeRangeSchema,
         returnedCount: z.number().int().min(0).max(50),
         source: z.string().min(1).max(128),
@@ -82,6 +86,9 @@ export function getDeliveryEventsDefinition(
         events: boundedEvents,
         query: {
           complete: page.complete && !truncated && coversRequestedRange,
+          coverageStatus:
+            page.coverageStatus ?? (page.complete ? "complete" : "unknown"),
+          eventsDropped: page.eventsDropped ?? 0,
           effectiveTimeRange: page.effectiveTimeRange,
           returnedCount: boundedEvents.length,
           source: connectorResult.source,

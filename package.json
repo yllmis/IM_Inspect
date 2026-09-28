@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.43",
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
     "ai": "^7.0.91",
     "mysql2": "^3.24.4",
     "next": "^15.4.0",
