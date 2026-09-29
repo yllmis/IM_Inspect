@@ -58,32 +58,30 @@ describe.skipIf(!configured)("GoIMConnector 真实 OperationsQuery 集成", () =
     }
   });
 
-  it("区分真实空结果与错误", async () => {
-    if (!missingMessageId) return;
+  it.skipIf(!missingMessageId)("区分真实空结果与错误", async () => {
     const connector = await createGoIMConnector({
       address: address!,
       serviceToken: serviceToken!,
       bootstrapContext: context,
     });
     const result = await connector.getMessageStatus(
-      { messageId: missingMessageId },
+      { messageId: missingMessageId! },
       context,
     );
     expect(result).toMatchObject({
       ok: true,
-      data: { messageId: missingMessageId, exists: false, persisted: null },
+      data: { messageId: missingMessageId!, exists: false, persisted: null },
     });
   });
 
-  it("验证用户匹配、投递事件和连接观测的字段映射", async () => {
-    if (!userId) return;
+  it.skipIf(!userId)("验证用户匹配、投递事件和连接观测的字段映射", async () => {
     const connector = await createGoIMConnector({
       address: address!,
       serviceToken: serviceToken!,
       bootstrapContext: context,
     });
     const user = await connector.findUserOrMessage(
-      { userId, limit: 10 },
+      { userId: userId!, limit: 10 },
       context,
     );
     expect(user.ok).toBe(true);
@@ -102,7 +100,7 @@ describe.skipIf(!configured)("GoIMConnector 真实 OperationsQuery 集成", () =
     }
 
     const connection = await connector.getConnectionStatus(
-      { userId, at: new Date().toISOString() },
+      { userId: userId!, at: new Date().toISOString() },
       context,
     );
     if (!connection.ok) {
@@ -112,15 +110,14 @@ describe.skipIf(!configured)("GoIMConnector 真实 OperationsQuery 集成", () =
     }
   });
 
-  it("可选验证权限错误映射", async () => {
-    if (!permissionMessageId) return;
+  it.skipIf(!permissionMessageId)("可选验证权限错误映射", async () => {
     const connector = await createGoIMConnector({
       address: address!,
       serviceToken: process.env.GO_IM_INVALID_SERVICE_TOKEN ?? serviceToken!,
       bootstrapContext: context,
     });
     const result = await connector.getMessageStatus(
-      { messageId: permissionMessageId },
+      { messageId: permissionMessageId! },
       context,
     );
     expect(result).toMatchObject({
@@ -129,20 +126,22 @@ describe.skipIf(!configured)("GoIMConnector 真实 OperationsQuery 集成", () =
     });
   });
 
-  it("可选验证服务端 deadline 映射为 timeout 且不生成事实", async () => {
-    if (!timeoutMessageId) return;
-    const connector = await createGoIMConnector({
-      address: address!,
-      serviceToken: serviceToken!,
-      bootstrapContext: context,
-    });
-    const result = await connector.getMessageStatus(
-      { messageId: timeoutMessageId },
-      context,
-    );
-    expect(result).toMatchObject({ ok: false, error: { code: "timeout" } });
-    expect(result).not.toHaveProperty("data");
-  });
+  it.skipIf(!timeoutMessageId)(
+    "可选验证服务端 deadline 映射为 timeout 且不生成事实",
+    async () => {
+      const connector = await createGoIMConnector({
+        address: address!,
+        serviceToken: serviceToken!,
+        bootstrapContext: context,
+      });
+      const result = await connector.getMessageStatus(
+        { messageId: timeoutMessageId! },
+        context,
+      );
+      expect(result).toMatchObject({ ok: false, error: { code: "timeout" } });
+      expect(result).not.toHaveProperty("data");
+    },
+  );
 });
 
 if (!configured) {
