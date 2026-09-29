@@ -2,21 +2,63 @@
 
 面向客服的 IM 消息异常诊断 Agent。项目当前按小步垂直切片开发。
 
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-255%20passed-2ea44f)](#开发与验证)
+[![License](https://img.shields.io/badge/license-private-lightgrey)](#)
+
+## 文档导航
+
+| 主题                           | 入口                                                             |
+| ------------------------------ | ---------------------------------------------------------------- |
+| 项目目标、用户和第一版边界     | [项目说明](docs/project-brief.md)                                |
+| MVP 分层架构                   | [MVP 架构图](docs/mvp-architecture.md)                           |
+| Agent 执行过程                 | [Agent 时序图](docs/agent-sequence.md)                           |
+| 状态机与统一事实模型           | [诊断状态机与 Canonical Model](docs/diagnosis-state-machine.md)  |
+| 五个工具的输入、输出和安全边界 | [工具契约](docs/tool-contracts.md)                               |
+| 接入真实 IM 的推荐查询门面     | [OperationsQuery 接入参考](docs/operations-query-integration.md) |
+| Go IM 字段和能力分析           | [Go IM 数据契约](docs/go-im-data-contract.md)                    |
+| 真实 Go IM Connector 实现      | [`src/connectors/go-im/`](src/connectors/go-im/)                 |
+| Eval 场景和执行边界            | [Eval Runner](docs/eval-runner.md)                               |
+| Trace 查询和回放               | [Trace 查询与回放](docs/trace-query-and-replay.md)               |
+
+> OperationsQuery 是本项目推荐的 IM 侧只读诊断查询门面。它是一个可替换的接口契约，不是要求所有 IM 使用相同数据库、RPC 或表结构；接入方也可以提供语义等价的查询服务，再由 Connector 做映射。
+
 ## 当前阶段
 
 - 设计基线：项目说明、诊断状态机、工具契约、Go IM 数据契约和 Eval 场景。
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
-- Connector：正式 Connector 接口、Fake Connector，以及 6 个固定核心 Fixture（消息缺失、写入失败、未投递、接收者离线、ACK 超时、成功投递）。
+- Connector：正式 Connector 接口、Fake Connector、6 个固定核心 Fixture，以及已实现的 `GoIMConnector`。GoIMConnector 只调用 IM-Grpc 的只读 `OperationsQuery`，不直连 MongoDB、Redis、Kafka 或旧 RPC。
+- OperationsQuery 接入：已提供 `OperationsQueryGrpcClient`、最小 proto 契约、原始响应 Zod 校验、UnixNano 时间转换、状态/错误/能力映射和 messageId 关联校验。
 - Agent Loop：已接入结构化上下文提取、4 个只读诊断工具、逐次事实合并、确定性诊断、受控回复和重复调用停止规则；升级草稿写操作不进入普通诊断循环。
 - 多轮状态：保留内存 `StateStore` 用于单元测试，API 已接入 `MySqlStateStore`；使用相同 `sessionId` 继续诊断，并通过 `version` 乐观锁阻止并发覆盖。
 - 工具结果边界：投递查询在 Connector 源头使用 `timeRange + limit`，显式返回完整性、截断和安全来源引用；Tool 层再执行字段白名单、脱敏、异常摘要和响应字节上限，模型只接收按用途裁剪的工作摘要。
 - 升级草稿：独立的 `prepare/confirm` API 使用 10 分钟一次性令牌、内容哈希、会话版本和幂等键；诊断快照、确认记录和草稿写入 MySQL，Agent Loop 不持有写权限。
-- 尚未实现：GoIMConnector 和缺少生产数据的完整 Eval 场景；`npm run eval` 已可执行本地 Fixture 场景，并明确标记缺失 Fixture 的场景。
+- 尚未完成：真实 Go IM 服务的端到端联调、生产认证系统接入和基于真实数据的性能验证。开发环境仍使用固定 Fixture，不声称代表生产数据。
 
 ## 架构图
 
 - [MVP 架构图](docs/mvp-architecture.md)
 - [Agent 时序图](docs/agent-sequence.md)
+
+## 真实 IM 接入路径
+
+接入方不需要为了 Agent 改写原有消息发送、投递或存储主链路。推荐在 IM 侧增加一个隔离的、只读的 OperationsQuery 门面：
+
+```text
+Agent Tool
+  -> GoIMConnector
+  -> OperationsQuery（只读查询、鉴权、边界和错误语义）
+  -> IM 现有 RPC / 查询服务 / 观测事件
+```
+
+OperationsQuery 的价值是把 IM 内部的 RPC 语义、数据库字段和错误码隔离在 IM 侧。Agent 只依赖稳定的业务语义，例如 `found=false`、`coverageStatus=partial` 和 `unsupported_capability`，不需要知道 `GetChatLog` 或具体表结构。完整的请求/响应字段、错误语义、能力声明和上线策略见 [OperationsQuery 接入参考](docs/operations-query-integration.md)。
+
+最小接入顺序：
+
+1. 先实现 `GetCapabilities` 和 `GetMessageRecord`，验证鉴权、超时和 `found=false` 语义。
+2. 再按实际可观测性接入投递时间线和连接观测；没有记录的能力必须返回 `unsupported`，不能用空数组伪造。
+3. 在 Agent 侧配置 `GO_IM_OPERATIONS_GRPC_URL` 和 `GO_IM_SERVICE_TOKEN`，使用 `GoIMConnector` 替换 `FakeConnector`。
+4. 先运行 Connector 单测和固定 Eval，再进行隔离环境的端到端联调。
 
 ## 本地命令
 
@@ -33,6 +75,19 @@ npm run eval:judge
 npm run eval:ci
 npm run eval:escalation
 ```
+
+### 开发与验证
+
+提交前建议运行：
+
+```sh
+npm run format
+npm run typecheck
+npm test
+npm run lint
+```
+
+真实 MySQL 或 Go IM 服务不是普通单测的前置条件。未配置外部服务时，测试使用固定 Fixture；真实集成测试必须显式配置对应环境变量。
 
 ## MySQL
 
