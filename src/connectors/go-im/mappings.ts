@@ -20,7 +20,12 @@ const NANOSECONDS_PER_MILLISECOND = BigInt(1_000_000);
 
 /** UnixNano -> ISO；使用 BigInt，避免 1.7e18 超出 Number.MAX_SAFE_INTEGER。 */
 export function unixNanoToIso(value: string | number): string | undefined {
-  const nano = BigInt(String(value));
+  let nano: bigint;
+  try {
+    nano = BigInt(String(value));
+  } catch {
+    return undefined;
+  }
   if (nano <= BigInt(0)) return undefined;
   const millis = nano / NANOSECONDS_PER_MILLISECOND;
   const date = new Date(Number(millis));
@@ -125,6 +130,7 @@ function deliveryStatus(eventType: string): DeliveryFact["result"] {
   if (type.includes("failed") || type === "receiver_offline") return "failed";
   if (
     type.includes("success") ||
+    type.includes("succeed") ||
     type.includes("delivered") ||
     type === "ack_received"
   )

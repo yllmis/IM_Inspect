@@ -211,4 +211,155 @@ describe("GoIMConnector", () => {
       data: { userId: "user_receiver", state: "online", historical: false },
     });
   });
+
+  it("映射 userId、displayName 和 multiple resolution，而不是自动选择用户", async () => {
+    const connector = new GoIMConnector({
+      client: client({
+        findUserReference: vi.fn(async (request) => ({
+          users: request.nickname
+            ? [
+                { userId: "u_1", displayName: request.nickname, observedAt },
+                { userId: "u_2", displayName: request.nickname, observedAt },
+              ]
+            : [
+                {
+                  userId: request.userId ?? "u_1",
+                  displayName: "客服甲",
+                  observedAt,
+                },
+              ],
+        })),
+      }),
+      capabilities,
+    });
+
+    const byId = await connector.findUserOrMessage(
+      { userId: "u_1", limit: 10 },
+      context,
+    );
+    expect(byId).toMatchObject({
+      ok: true,
+      data: { resolutionStatus: "unique", matches: [{ userId: "u_1" }] },
+    });
+
+    const byName = await connector.findUserOrMessage(
+      { displayName: "客服甲", limit: 10 },
+      context,
+    );
+    expect(byName).toMatchObject({
+      ok: true,
+      data: {
+        resolutionStatus: "multiple",
+        matches: [{ userId: "u_1" }, { userId: "u_2" }],
+      },
+    });
+  });
+
+  it("拒绝不支持的 conversation 查询，且不调用下游", async () => {
+    const findUserReference = vi.fn();
+    const connector = new GoIMConnector({
+      client: client({ findUserReference }),
+      capabilities,
+    });
+    const result = await connector.findUserOrMessage(
+      { conversationId: "conv_001", limit: 10 },
+      context,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_capability" },
+    });
+    expect(findUserReference).not.toHaveBeenCalled();
+  });
+
+  it("映射权限错误和非法响应，而不是生成 Canonical Fact", async () => {
+    const permission = new Error("permission denied");
+    Object.assign(permission, { code: 7 });
+    const denied = new GoIMConnector({
+      client: client({
+        getMessageRecord: vi.fn(async () => {
+          throw permission;
+        }),
+      }),
+      capabilities,
+    });
+    expect(
+      await denied.getMessageStatus({ messageId: "msg_001" }, context),
+    ).toMatchObject({ ok: false, error: { code: "permission_denied" } });
+
+    const malformed = new GoIMConnector({
+      client: client({
+        getMessageRecord: vi.fn(async () => ({
+          found: true,
+          messageId: "msg_001",
+          observedAt: "not-a-time",
+        })),
+      }),
+      capabilities,
+    });
+    expect(
+      await malformed.getMessageStatus({ messageId: "msg_001" }, context),
+    ).toMatchObject({ ok: false, error: { code: "internal" } });
+  });
+
+  it("timeout 时不产生 exists=false 或 persisted=null 的事实", async () => {
+    const timeout = new Error("deadline exceeded");
+    Object.assign(timeout, { code: 4 });
+    const connector = new GoIMConnector({
+      client: client({
+        getMessageRecord: vi.fn(async () => {
+          throw timeout;
+        }),
+      }),
+      capabilities,
+    });
+    const result = await connector.getMessageStatus(
+      { messageId: "msg_001" },
+      context,
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "timeout" } });
+    expect(result).not.toHaveProperty("data.exists");
+    expect(result).not.toHaveProperty("data.persisted");
+  });
+
+  it("拒绝投递事件和请求 messageId 不一致，并过滤敏感字段", async () => {
+    const connector = new GoIMConnector({
+      client: client({
+        getDeliveryTimeline: vi.fn(async () => ({
+          messageId: "msg_001",
+          events: [
+            {
+              eventType: "delivery_succeeded",
+              messageId: "msg_other",
+              occurredAt: observedAt,
+              phone: "13800000000",
+            },
+          ],
+          complete: true,
+          truncated: false,
+          coverageStatus: "complete" as const,
+          eventsDropped: "0",
+        })),
+      }),
+      capabilities,
+    });
+    expect(
+      await connector.getDeliveryEvents(
+        { messageId: "msg_001", limit: 20 },
+        context,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "internal" } });
+  });
+
+  it("能力不支持时不把空结果当成真实查询结果", async () => {
+    const getMessageRecord = vi.fn();
+    const connector = new GoIMConnector({
+      client: client({ getMessageRecord }),
+      capabilities: { ...capabilities, messageLookup: "unsupported" },
+    });
+    expect(
+      await connector.getMessageStatus({ messageId: "msg_001" }, context),
+    ).toMatchObject({ ok: false, error: { code: "unsupported_capability" } });
+    expect(getMessageRecord).not.toHaveBeenCalled();
+  });
 });

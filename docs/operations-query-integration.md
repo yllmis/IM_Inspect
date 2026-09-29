@@ -153,3 +153,18 @@ npm run typecheck
 npm test -- --run src/connectors/go-im/go-im-connector.test.ts
 npm run lint
 ```
+
+真实 gRPC 集成测试不会使用仓库中的固定 Fixture。只有同时配置服务地址、服务端令牌和
+`GO_IM_TEST_MESSAGE_ID` 后才会连接 Go IM；未配置时用例会明确标记为 `skipped`：
+
+```sh
+GO_IM_OPERATIONS_GRPC_URL=127.0.0.1:9100 \
+GO_IM_SERVICE_TOKEN=replace-with-server-side-token \
+GO_IM_TEST_MESSAGE_ID=msg-from-isolated-test-data \
+npm run test:go-im
+```
+
+可选的 `GO_IM_TEST_MISSING_MESSAGE_ID`、`GO_IM_TEST_USER_ID`、
+`GO_IM_TEST_PERMISSION_MESSAGE_ID` 和 `GO_IM_TEST_TIMEOUT_MESSAGE_ID` 分别启用
+空结果、用户/投递/连接、权限错误和超时场景。真实 ID、手机号、消息正文和令牌不能写入
+仓库；权限和超时场景应使用隔离测试数据或专用测试服务端配置。

@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 // proto-loader 使用 longs:String，避免 UnixNano 在 JS number 中丢失精度；测试也允许传 number。
-const LongSchema = z.union([z.string(), z.number().int()]).transform(String);
+const LongSchema = z
+  .union([z.string(), z.number().int()])
+  .refine((value) => /^-?\d+$/.test(String(value)), "invalid UnixNano")
+  .transform(String);
 const OptionalLongSchema = LongSchema.optional().default("0");
 
 export const RawUserReferenceSchema = z
