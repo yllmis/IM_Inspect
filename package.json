@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:fake": "IM_INSPECT_CONNECTOR=fake next dev",
+    "dev:go-im": "IM_INSPECT_CONNECTOR=go-im next dev",
     "build": "next build",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate-mysql.mjs",
     "start": "next start",

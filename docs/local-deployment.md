@@ -1,0 +1,178 @@
+# 本地部署与演示
+
+本文只描述本地或隔离测试环境。不要把生产密码、Token、真实用户数据、数据库 Dump 或未脱敏日志复制到本仓库。
+
+## 1. 前置条件
+
+- Node.js 22（建议使用当前 LTS）和 npm；
+- MySQL 8.x，并创建独立的 `im_inspect` 数据库及最小权限账号；
+- 一个有效的 MiMo API Key；
+- 仅在真实 IM 模式下：可访问的 `OperationsQuery` gRPC 服务。
+
+安装依赖并创建本地配置：
+
+```sh
+npm install
+cp .env.example .env.local
+```
+
+`.env.local` 已被 Git 忽略。填写 MiMo 和 MySQL 配置后执行迁移：
+
+```sh
+npm run db:migrate
+```
+
+开发启动：
+
+```sh
+npm run dev
+```
+
+生产方式本地验证：
+
+```sh
+npm run build
+npm start
+```
+
+浏览器访问 `http://127.0.0.1:3000`。不要同时运行 `next dev` 和 `next build`，两者会共同写入 `.next`。
+
+如需在本地 UI 演示升级草稿和 Trace 权限流程，可显式启用固定演示身份：
+
+```env
+DEMO_SUPPORT_AUTO_AUTH=true
+```
+
+该开关在 `NODE_ENV=production` 时无效；生产环境必须接入 Bearer Token/JWT 等真实认证。
+
+## 2. Fake Connector 演示
+
+Fake Connector 使用固定 Fixture，不访问真实 IM，适合演示和回归：
+
+```env
+IM_INSPECT_CONNECTOR=fake
+FAKE_CONNECTOR_FIXTURE=delivered
+```
+
+也可以只对本次进程覆盖模式：
+
+```sh
+npm run dev:fake
+```
+
+核心 Fixture 与测试消息 ID：
+
+| Fixture | 消息 ID | 预期分类 |
+| --- | --- | --- |
+| `delivered` | `msg_delivered` | `delivered` |
+| `message_missing` | `msg_missing` | `message_not_found` |
+| `write_failed` | `msg_write_failed` | `write_failed` |
+| `not_delivered` | `msg_not_delivered` | `not_delivered` |
+| `receiver_offline` | `msg_receiver_offline` | `receiver_offline` |
+| `ack_timeout` | `msg_ack_timeout` | `ack_timeout` |
+
+例如切换场景后重启 Next.js，再输入“查询 `msg_ack_timeout` 为什么没有收到 ACK”。Fixture 是测试数据，不代表生产效果。
+
+## 3. Go IM Connector
+
+Go IM 模式只调用只读 `OperationsQuery`，不直连 MongoDB、Redis、Kafka、SQL 或 Shell：
+
+```env
+IM_INSPECT_CONNECTOR=go-im
+GO_IM_OPERATIONS_GRPC_URL=127.0.0.1:9100
+GO_IM_SERVICE_TOKEN=
+GO_IM_OPERATIONS_PROTO_PATH=
+GO_IM_INSECURE=true
+```
+
+本地无 TLS 时使用 `GO_IM_INSECURE=true`；部署环境应使用 TLS 并设为 `false`。启用服务鉴权时，`GO_IM_SERVICE_TOKEN` 必须与 OperationsQuery 服务端一致，只放在服务端环境变量中。
+
+启动 Agent：
+
+```sh
+npm run dev:go-im
+```
+
+如果 `GO_IM_OPERATIONS_GRPC_URL` 缺失，接口返回 `connector_not_configured`；系统不会静默改用 Fake 数据。真实 Connector 集成测试见：
+
+```sh
+npm run test:go-im
+```
+
+未配置真实地址、令牌和隔离测试 ID 时，用例会明确显示为 `skipped`，不算测试通过。
+
+## 4. 可选启动 IM-Grpc OperationsQuery
+
+本项目不在 Next.js 中编译或启动 Go 服务。若本机同时存在 `/Users/yllmis/go_projects/IM-Grpc`，先启动它依赖的 MongoDB、etcd、user-rpc 和 social-rpc，再运行：
+
+```sh
+cd /Users/yllmis/go_projects/IM-Grpc
+go run ./apps/operations/rpc/operations.go \
+  -f ./apps/operations/rpc/etc/dev/operations.yaml
+```
+
+示例配置默认使用容器主机名 `mongo`、`etcd`，并关闭服务鉴权和投递观测。直接在宿主机运行时，应创建未提交的本地配置副本，改成实际可访问的地址；不要把密码或 Token 写回仓库。OperationsQuery 可以独立启动，但其可用能力取决于依赖和观测数据，未记录的能力必须返回 `unsupported` 或 `partial`。
+
+## 5. Eval 与验证
+
+```sh
+# 确定性 Eval（默认使用 Fake Connector）
+npm run eval
+
+# 只校验 Eval YAML 契约
+npm run eval:contract
+
+# 失败案例报告
+npm run eval:failures
+
+# 三组以上消融/对照实验
+npm run eval:ablation
+
+# 升级草稿确认流程
+npm run eval:escalation-workflow
+
+# 可选 MiMo Judge；不能替代确定性检查
+npm run eval:judge
+```
+
+提交前运行：
+
+```sh
+npm run format
+npm run typecheck
+npm test
+npm run lint
+npm run build
+```
+
+## 6. 环境变量
+
+| 变量 | 必需范围 | 用途 |
+| --- | --- | --- |
+| `MIMO_BASE_URL` | Agent | OpenAI-compatible 基础地址 |
+| `MIMO_MODEL` | Agent | 模型名称 |
+| `MIMO_API_KEY` | Agent | 服务端模型凭证 |
+| `MYSQL_DATABASE_URL` | Agent | 会话状态、诊断及升级草稿持久化 |
+| `MYSQL_POOL_LIMIT` | 可选 | MySQL 连接池上限 |
+| `DEMO_SUPPORT_API_TOKEN` | 升级/Trace API | MVP 服务端演示认证；不能传给模型 |
+| `DEMO_SUPPORT_AUTO_AUTH` | 本地 UI 可选 | 非生产环境固定演示身份；默认关闭 |
+| `IM_INSPECT_CONNECTOR` | Connector | `fake` 或 `go-im`，默认 `fake` |
+| `FAKE_CONNECTOR_FIXTURE` | Fake | 固定 Fixture 名称，默认 `delivered` |
+| `GO_IM_OPERATIONS_GRPC_URL` | Go IM | OperationsQuery 地址 |
+| `GO_IM_SERVICE_TOKEN` | Go IM 可选 | gRPC 服务身份 Token |
+| `GO_IM_OPERATIONS_PROTO_PATH` | Go IM 可选 | 自定义 proto 路径；默认使用仓库副本 |
+| `GO_IM_INSECURE` | Go IM 可选 | 本地明文 gRPC；默认 `true` |
+| `MYSQL_TEST_URL` | MySQL 集成测试 | 只能指向隔离测试库 |
+| `GO_IM_TEST_*` | Go IM 集成测试 | 隔离环境测试 ID，不提交真实 ID |
+
+所有凭证变量均为服务端变量，禁止添加 `NEXT_PUBLIC_` 前缀。
+
+## 7. 提交前安全检查
+
+```sh
+git status --short
+git diff --check
+git check-ignore .env.local
+```
+
+确认不提交：数据库密码、生产 Token、真实用户或消息数据、数据库 Dump、未脱敏日志，以及没有测试证据的生产收益数字。

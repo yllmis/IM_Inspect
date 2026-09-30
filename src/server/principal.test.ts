@@ -25,6 +25,22 @@ describe("authenticateDemoSupportRequest", () => {
     ).toThrow(AuthenticationError);
   });
 
+  it("仅非生产环境允许显式开启本地演示身份", () => {
+    const request = new Request("http://localhost/api/demo");
+    expect(
+      authenticateDemoSupportRequest(request, {
+        DEMO_SUPPORT_AUTO_AUTH: "true",
+        NODE_ENV: "development",
+      }),
+    ).toMatchObject({ actorId: "support_demo", tenantId: "tenant_demo" });
+    expect(() =>
+      authenticateDemoSupportRequest(request, {
+        DEMO_SUPPORT_AUTO_AUTH: "true",
+        NODE_ENV: "production",
+      }),
+    ).toThrow(AuthenticationError);
+  });
+
   it("derives identity and permission from server configuration", () => {
     const request = new Request(
       "http://localhost/api/escalation-drafts/prepare",

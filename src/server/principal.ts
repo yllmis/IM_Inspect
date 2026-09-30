@@ -17,6 +17,13 @@ export function authenticateDemoSupportRequest(
   request: Request,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): AuthenticatedPrincipal {
+  // 仅用于本地工作台演示：生产环境永远不能绕过 Bearer/JWT 认证。
+  if (
+    environment.DEMO_SUPPORT_AUTO_AUTH === "true" &&
+    environment.NODE_ENV !== "production"
+  ) {
+    return demoPrincipal();
+  }
   const expected = environment.DEMO_SUPPORT_API_TOKEN;
   const authorization = request.headers.get("authorization");
   const supplied = authorization?.startsWith("Bearer ")
@@ -25,6 +32,10 @@ export function authenticateDemoSupportRequest(
   if (!expected || !supplied || !safeEqual(expected, supplied)) {
     throw new AuthenticationError();
   }
+  return demoPrincipal();
+}
+
+function demoPrincipal(): AuthenticatedPrincipal {
   return {
     tenantId: "tenant_demo",
     actorId: "support_demo",

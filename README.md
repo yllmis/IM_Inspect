@@ -3,7 +3,7 @@
 面向客服的 IM 消息异常诊断 Agent。项目当前按小步垂直切片开发。
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-255%20passed-2ea44f)](#开发与验证)
+[![Tests](https://img.shields.io/badge/tests-294%20passed-2ea44f)](#开发与验证)
 [![License](https://img.shields.io/badge/license-private-lightgrey)](#)
 
 ## 文档导航
@@ -20,6 +20,7 @@
 | 真实 Go IM Connector 实现      | [`src/connectors/go-im/`](src/connectors/go-im/)                 |
 | Eval 场景和执行边界            | [Eval Runner](docs/eval-runner.md)                               |
 | Trace 查询和回放               | [Trace 查询与回放](docs/trace-query-and-replay.md)               |
+| 本地启动、Connector 切换与演示 | [本地部署与演示](docs/local-deployment.md)                       |
 
 > OperationsQuery 是本项目推荐的 IM 侧只读诊断查询门面。它是一个可替换的接口契约，不是要求所有 IM 使用相同数据库、RPC 或表结构；接入方也可以提供语义等价的查询服务，再由 Connector 做映射。
 
@@ -57,14 +58,26 @@ OperationsQuery 的价值是把 IM 内部的 RPC 语义、数据库字段和错�
 
 1. 先实现 `GetCapabilities` 和 `GetMessageRecord`，验证鉴权、超时和 `found=false` 语义。
 2. 再按实际可观测性接入投递时间线和连接观测；没有记录的能力必须返回 `unsupported`，不能用空数组伪造。
-3. 在 Agent 侧配置 `GO_IM_OPERATIONS_GRPC_URL` 和 `GO_IM_SERVICE_TOKEN`，使用 `GoIMConnector` 替换 `FakeConnector`。
+3. 设置 `IM_INSPECT_CONNECTOR=go-im`，并配置 `GO_IM_OPERATIONS_GRPC_URL` 和服务端 Token；Route 会通过 Connector 工厂选择 `GoIMConnector`。
 4. 先运行 Connector 单测和固定 Eval，再进行隔离环境的端到端联调。
 
 ## 本地命令
 
+首次运行：
+
 ```sh
 npm install
+cp .env.example .env.local
+npm run db:migrate
+npm run dev:fake
+```
+
+访问 `http://127.0.0.1:3000`。Fake 场景、Go IM 切换、可选 Go 查询服务启动方式和完整环境变量说明见[本地部署与演示](docs/local-deployment.md)。
+
+```sh
 npm run dev
+npm run dev:fake
+npm run dev:go-im
 npm run typecheck
 npm test
 npm run build

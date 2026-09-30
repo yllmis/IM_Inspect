@@ -6,7 +6,6 @@ import { ChatRequestSchema } from "../../../src/agent/chat-request";
 import { ContextBudgetExceededError } from "../../../src/agent/context-budget";
 import { TargetSwitchResolutionError } from "../../../src/agent/state-merge";
 import { StateStoreError } from "../../../src/agent/state-store";
-import { FakeConnector } from "../../../src/connectors/fake/fake-connector";
 import {
   createMySqlPool,
   MySqlConfigurationError,
@@ -17,12 +16,30 @@ import { createToolContext } from "../../../src/tools/context";
 import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
 import { ToolRegistry } from "../../../src/tools/registry";
 import { getTraceStore } from "../../../src/server/trace-runtime";
+import {
+  ConnectorConfigurationError,
+  createConnectorFromEnvironment,
+} from "../../../src/server/connector-runtime";
 
 let stateStore: MySqlStateStore | undefined;
-const registry = new ToolRegistry({
-  connector: new FakeConnector("delivered"),
-  draftRepository: createInMemoryDraftRepository(),
-});
+let registryPromise: Promise<ToolRegistry> | undefined;
+
+function getToolRegistry(): Promise<ToolRegistry> {
+  registryPromise ??= createConnectorFromEnvironment()
+    .then(
+      (connector) =>
+        new ToolRegistry({
+          connector,
+          draftRepository: createInMemoryDraftRepository(),
+        }),
+    )
+    .catch((error) => {
+      // 配置修复后允许开发服务器下一次请求重新初始化。
+      registryPromise = undefined;
+      throw error;
+    });
+  return registryPromise;
+}
 
 export async function POST(request: Request) {
   const parsed = ChatRequestSchema.safeParse(
@@ -57,6 +74,7 @@ export async function POST(request: Request) {
     ],
   });
   try {
+    const registry = await getToolRegistry();
     stateStore ??= new MySqlStateStore(
       createMySqlPool(readMySqlConnectionConfig()),
     );
@@ -79,6 +97,12 @@ export async function POST(request: Request) {
     if (error instanceof MySqlConfigurationError) {
       return NextResponse.json(
         { error: "database_not_configured" },
+        { status: 503 },
+      );
+    }
+    if (error instanceof ConnectorConfigurationError) {
+      return NextResponse.json(
+        { error: "connector_not_configured", reason: error.code },
         { status: 503 },
       );
     }
