@@ -62,6 +62,8 @@ OperationsQuery 的价值是把 IM 内部的 RPC 语义、数据库字段和错�
 3. 设置 `IM_INSPECT_CONNECTOR=go-im`，并配置 `GO_IM_OPERATIONS_GRPC_URL` 和服务端 Token；Route 会通过 Connector 工厂选择 `GoIMConnector`。
 4. 先运行 Connector 单测和固定 Eval，再进行隔离环境的端到端联调。
 
+远程 OperationsQuery 推荐仅绑定服务器回环地址，开发时通过 SSH 隧道映射到本地端口；生产使用内网/VPN，或同时启用 TLS、IP 白名单和服务 Token。不要为了联调把明文 gRPC 查询入口直接开放到公网，具体命令见[本地部署与演示](docs/local-deployment.md#3-go-im-connector)。
+
 ## 本地命令
 
 首次运行：

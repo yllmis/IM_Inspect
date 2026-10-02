@@ -85,6 +85,25 @@ GO_IM_OPERATIONS_PROTO_PATH=
 GO_IM_INSECURE=true
 ```
 
+当 OperationsQuery 在远程服务器上只绑定 `127.0.0.1:9100` 时，不应把 9100 暴露到公网。开发联调先在本机建立 SSH 隧道：
+
+```sh
+ssh -N \
+  -L 127.0.0.1:19100:127.0.0.1:9100 \
+  root@<IM_SERVER_IP>
+```
+
+保持该终端运行，并将 Agent 配置为：
+
+```env
+IM_INSPECT_CONNECTOR=go-im
+GO_IM_OPERATIONS_GRPC_URL=127.0.0.1:19100
+GO_IM_INSECURE=true
+GO_IM_SERVICE_TOKEN=<只保存在本地服务端环境中的查询服务 Token>
+```
+
+这里的 `GO_IM_INSECURE=true` 只表示本地 Agent 到本地 SSH 端口使用明文 gRPC；跨公网部分由 SSH 加密。不要把 `0.0.0.0:9100` 与明文 gRPC 组合后直接暴露公网。生产环境优先使用内网/VPN；确需公网时必须同时配置 gRPC TLS、来源 IP 白名单、主机防火墙和服务 Token。
+
 本地无 TLS 时使用 `GO_IM_INSECURE=true`；部署环境应使用 TLS 并设为 `false`。启用服务鉴权时，`GO_IM_SERVICE_TOKEN` 必须与 OperationsQuery 服务端一致，只放在服务端环境变量中。
 
 启动 Agent：
@@ -111,7 +130,7 @@ go run ./apps/operations/rpc/operations.go \
   -f ./apps/operations/rpc/etc/dev/operations.yaml
 ```
 
-示例配置默认使用容器主机名 `mongo`、`etcd`，并关闭服务鉴权和投递观测。直接在宿主机运行时，应创建未提交的本地配置副本，改成实际可访问的地址；不要把密码或 Token 写回仓库。OperationsQuery 可以独立启动，但其可用能力取决于依赖和观测数据，未记录的能力必须返回 `unsupported` 或 `partial`。
+示例配置默认使用容器主机名 `mongo`、`etcd`，并关闭服务鉴权和投递观测。直接在宿主机运行时，应创建未提交的本地配置副本，改成实际可访问的地址；不要把密码或 Token 写回仓库。远程容器推荐映射为 `127.0.0.1:9100:9100`，由 SSH 隧道、内网或 VPN 提供访问。OperationsQuery 可以独立启动，但其可用能力取决于依赖和观测数据，未记录的能力必须返回 `unsupported` 或 `partial`。
 
 ## 5. Eval 与验证
 
