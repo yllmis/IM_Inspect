@@ -18,7 +18,8 @@
 | `npm run eval:contract` | 41 场景，29/29 Fixture 存在 | 只验证契约与资源存在 |
 | 普通 Eval | 34/41 通过 | 7 个升级组失败仍保留，不通过修改预期消除失败 |
 | 专用升级 Eval | 7/7 通过 | 验证实际 prepare/confirm，普通 Runner 的 7 个差异归为 `eval_harness_gap` |
-| `npm run test:go-im` | 7 个明确跳过 | 没有配置 OperationsQuery 地址、服务身份和隔离测试 ID |
+| `npm run test:go-im`（SSH 隧道） | 5 通过，2 跳过 | 真实 OperationsQuery；2 个可选故障注入 ID 未配置 |
+| Go IM Agent 端到端（SSH 隧道） | HTTP 200；`message_not_found` | 真实 MiMo + GoIMConnector + OperationsQuery；使用隔离测试 ID，只读查询 |
 | `npm run typecheck` / `npm run lint` | 通过 | 包括新增测试和冒烟脚本 |
 | `npm run build` | 通过 | proto 已出现在 Chat Route 的文件追踪清单 |
 
@@ -35,7 +36,7 @@ npm run test:go-im
 
 结果为能力查询在 5 秒 deadline 内超时，外部 TCP 探测也在约 3 秒后超时。后续确认这是预期的部署边界：容器端口映射为 `127.0.0.1:9100:9100`，故意不允许公网直接访问。这次超时证明公网入口未开放，不是 OperationsQuery 服务故障，也不能说明消息不存在。Connector 测试仍按超时失败返回，不把它转换成 `exists=false`。
 
-正确联调方式是在本地建立 `127.0.0.1:19100 -> SSH -> 服务器 127.0.0.1:9100` 的加密转发，再把 `GO_IM_OPERATIONS_GRPC_URL` 设置为 `127.0.0.1:19100`。当前自动执行环境没有可用的服务器 SSH 登录凭证，尝试建立隧道返回 `Permission denied`；同时本机 19100 未监听。因此真实能力、消息字段、空结果、权限和投递测试尚未执行。用户手动建立隧道并保持终端运行后，补充隔离的测试 ID，再重新运行 `npm run test:go-im`。
+正确联调方式是在本地建立 `127.0.0.1:19100 -> SSH -> 服务器 127.0.0.1:9100` 的加密转发，再把 `GO_IM_OPERATIONS_GRPC_URL` 设置为 `127.0.0.1:19100`。建立隧道后，能力查询通过，真实 Connector 测试通过 5 项、跳过 2 项可选故障注入测试；随后启动 Go IM Connector 模式的 Next.js，真实 MiMo Agent Loop 通过 `get_message_status` 返回 HTTP 200 和 `message_not_found`。这个分类来自 OperationsQuery 对隔离测试 ID 的成功空结果，不是超时推断。
 
 单测中的 MySQL 用例默认跳过，但单独加载 `.env.local` 后的真实 MySQL 集成命令已经执行通过。这两项不是同一次执行，也不能把它们的跳过计为通过。
 
@@ -53,7 +54,7 @@ npm run test:go-im
 
 ## 保留的限制
 
-- 远程 OperationsQuery 只允许服务器本机访问；当前测试环境尚未建立 SSH 隧道，也没有完成隔离测试 ID 的真实联调。本地合成 gRPC 服务不能替代真实 Go IM 链路。
+- 远程 OperationsQuery 只允许服务器本机访问；本次已通过临时 SSH 隧道完成真实只读联调。仍未配置权限错误和超时故障注入 ID，因此这两种异常路径仍需后续隔离环境补测。本地合成 gRPC 服务不能替代真实 Go IM 链路。
 - 生产登录认证尚未接入。演示自动身份在生产环境无效，不能作为生产认证方案。
 - Trace 仍为单进程内存仓储；服务重启会丢失，跨实例和长期审计需要另行接入持久化 Repository。
 - 本次没有进行真实 IM 性能压测或生产稳定性验证。
