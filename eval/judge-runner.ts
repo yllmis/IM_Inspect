@@ -53,7 +53,8 @@ function createJudgeModel() {
     baseURL,
     name: "mimo",
     headers: { "api-key": apiKey },
-    supportsStructuredOutputs: true,
+    // 与 Agent 使用相同的 MiMo json_object 协议，Judge 输出仍需 Zod 校验。
+    supportsStructuredOutputs: false,
   });
   return { model: provider.chatModel(modelName), modelName };
 }

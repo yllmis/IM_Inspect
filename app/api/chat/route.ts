@@ -60,7 +60,9 @@ export async function POST(request: Request) {
     baseURL,
     name: "mimo",
     headers: { "api-key": apiKey },
-    supportsStructuredOutputs: true,
+    // MiMo 接入使用 json_object 协议；结构校验仍由 SDK + Zod 执行，
+    // 不把“支持 JSON”误当成已经验证支持 OpenAI strict json_schema。
+    supportsStructuredOutputs: false,
   });
   const toolContext = createToolContext({
     requestId: crypto.randomUUID(),
@@ -72,6 +74,9 @@ export async function POST(request: Request) {
       "diagnosis:read_delivery",
       "diagnosis:read_connection",
     ],
+    // 一次 Agent Run 可能包含多次模型调用；工具 deadline 不能从 10 秒开始消耗，
+    // 否则模型提取阶段结束后，真实 IM 查询会被误判为超时。
+    deadline: Date.now() + 120_000,
   });
   try {
     const registry = await getToolRegistry();

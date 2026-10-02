@@ -71,7 +71,8 @@ const RESPONSE_PROMPT = `${SYSTEM_PROMPT}
 - 不得改变 diagnosis.classification。
 - 工具失败或超时时，明确说明本次查询失败，不得说成数据不存在。
 - 回复简洁，并说明下一步需要客服补充什么或是否建议升级。
-- classification 必须原样复制输入中 diagnosis.classification。`;
+- classification 必须原样复制输入中 diagnosis.classification。
+- 只输出 JSON 对象，恰好包含 classification（分类字符串）和 reply（客服回复字符串）两个字段。`;
 
 export interface AgentInput {
   sessionId: string;
@@ -122,6 +123,10 @@ export async function runAgent(
   input: AgentInput,
 ): Promise<AgentExecutionResult> {
   const now = input.now ?? (() => new Date());
+  // Run deadline 覆盖模型等待和工具调用，单工具仍有独立的短超时。
+  const abortSignal = AbortSignal.timeout(
+    Math.max(1, input.toolContext.deadline - now().getTime()),
+  );
   const traceRecorder = new RunTraceRecorder({
     runId: input.toolContext.runId,
     sessionId: input.sessionId,
@@ -139,6 +144,7 @@ export async function runAgent(
       ...input,
       now,
       traceRecorder,
+      abortSignal,
     });
   } catch (error) {
     // 即使模型、预算或 StateStore 抛错，也保存失败 Run 的最小审计 Trace。
@@ -163,6 +169,7 @@ async function runAgentLoop(
   input: AgentInput & {
     now: () => Date;
     traceRecorder: RunTraceRecorder;
+    abortSignal: AbortSignal;
   },
 ): Promise<AgentExecutionResult> {
   const now = input.now;
@@ -242,6 +249,7 @@ async function runAgentLoop(
     const extracted = await extractCandidateContext({
       model: input.model,
       modelContext: extractionContext,
+      abortSignal: input.abortSignal,
       budget: contextBudget,
       maxOutputTokens: contextBudget.maxOutputTokens,
       onUsage: (usage) =>
@@ -358,6 +366,7 @@ async function runAgentLoop(
   });
   const selectionStarted = traceRecorder.mark();
   const selection = await generateText({
+    abortSignal: input.abortSignal,
     model: input.model,
     system: SYSTEM_PROMPT,
     prompt: selectionPrompt,
@@ -445,6 +454,7 @@ async function runAgentLoop(
       budget: contextBudget,
     });
     const generated = await generateText({
+      abortSignal: input.abortSignal,
       model: input.model,
       system: RESPONSE_PROMPT,
       prompt: responsePrompt,

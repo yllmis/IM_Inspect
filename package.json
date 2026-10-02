@@ -23,6 +23,7 @@
     "eval:contract": "ruby scripts/validate-eval.rb",
     "test:mysql": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/persistence/mysql/*.integration.test.ts",
     "test:go-im": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/connectors/go-im/*.integration.test.ts",
+    "test:smoke": "node --env-file-if-exists=.env.local scripts/smoke-local.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
