@@ -22,6 +22,21 @@
 | `npm run typecheck` / `npm run lint` | 通过 | 包括新增测试和冒烟脚本 |
 | `npm run build` | 通过 | proto 已出现在 Chat Route 的文件追踪清单 |
 
+## 远程 Go IM 联调补充
+
+在收到 `43.140.35.96:9100` 后，使用只读能力查询进行了验证：
+
+```text
+GO_IM_OPERATIONS_GRPC_URL=43.140.35.96:9100
+GO_IM_INSECURE=true
+GO_IM_TEST_MESSAGE_ID=
+npm run test:go-im
+```
+
+结果为能力查询在 5 秒 deadline 内超时，外部 TCP 探测也在约 3 秒后超时；因此消息字段映射、空结果、权限和投递能力测试没有被执行。此次结果只能说明当前执行环境到该公网端口不可达，不能说明消息不存在，也不能说明 OperationsQuery 业务实现错误。测试已按失败返回，不把超时转换成 `exists=false`。
+
+服务器侧需要核对：OperationsQuery 是否监听 `0.0.0.0:9100` 而非仅 `127.0.0.1`；主机防火墙和云安全组是否放行 TCP 9100；服务依赖是否已启动；若服务启用了鉴权，再配置 `GO_IM_SERVICE_TOKEN`。修复网络后，补充隔离的 `GO_IM_TEST_MESSAGE_ID`、`GO_IM_TEST_MISSING_MESSAGE_ID` 和其他可选测试 ID，再重新运行 `npm run test:go-im`。
+
 单测中的 MySQL 用例默认跳过，但单独加载 `.env.local` 后的真实 MySQL 集成命令已经执行通过。这两项不是同一次执行，也不能把它们的跳过计为通过。
 
 ## 测试发现的问题与修复
