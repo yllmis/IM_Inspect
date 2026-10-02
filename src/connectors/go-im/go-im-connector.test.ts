@@ -362,4 +362,21 @@ describe("GoIMConnector", () => {
     ).toMatchObject({ ok: false, error: { code: "unsupported_capability" } });
     expect(getMessageRecord).not.toHaveBeenCalled();
   });
+
+  it("能力初始化的权限错误不能降级成能力不支持", async () => {
+    const getMessageRecord = vi.fn();
+    const connector = new GoIMConnector({
+      client: client({ getMessageRecord }),
+      capabilities: { ...capabilities, messageLookup: "unsupported" },
+      bootstrapFailure: {
+        code: "permission_denied",
+        message: "OperationsQuery permission denied",
+        retryable: false,
+      },
+    });
+    expect(
+      await connector.getMessageStatus({ messageId: "msg_001" }, context),
+    ).toMatchObject({ ok: false, error: { code: "permission_denied" } });
+    expect(getMessageRecord).not.toHaveBeenCalled();
+  });
 });

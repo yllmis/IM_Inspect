@@ -56,6 +56,8 @@ const UNSUPPORTED_CAPABILITIES: ConnectorCapabilities = {
 export interface GoIMConnectorOptions {
   client: OperationsQueryClient;
   capabilities: ConnectorCapabilities;
+  /** 能力初始化失败必须保留真实错误，不能伪装成“能力不支持”。 */
+  bootstrapFailure?: ToolError;
   now?: () => Date;
   timeoutMs?: number;
 }
@@ -67,12 +69,14 @@ export interface GoIMConnectorOptions {
 export class GoIMConnector implements Connector {
   private readonly client: OperationsQueryClient;
   private readonly capabilities: ConnectorCapabilities;
+  private readonly bootstrapFailure?: ToolError;
   private readonly now: () => Date;
   private readonly timeoutMs: number;
 
   constructor(options: GoIMConnectorOptions) {
     this.client = options.client;
     this.capabilities = ConnectorCapabilitiesSchema.parse(options.capabilities);
+    this.bootstrapFailure = options.bootstrapFailure;
     this.now = options.now ?? (() => new Date());
     this.timeoutMs = options.timeoutMs ?? 3_000;
   }
@@ -344,6 +348,14 @@ export class GoIMConnector implements Connector {
   private requireCapability(
     capability: string,
   ): ConnectorResult<never> | undefined {
+    if (this.bootstrapFailure) {
+      return this.failure(
+        this.bootstrapFailure.code,
+        this.bootstrapFailure.message,
+        this.bootstrapFailure.retryable,
+        this.bootstrapFailure.details,
+      );
+    }
     if (this.capabilities[capability] === "unsupported") {
       return this.failure(
         "unsupported_capability",
@@ -398,11 +410,12 @@ export async function createGoIMConnector(
       ),
     );
     return new GoIMConnector({ client, capabilities: mapCapabilities(raw) });
-  } catch {
-    // 能力读取失败时宁可声明全部不支持，也不虚报可用能力。
+  } catch (error) {
+    // 能力读取失败时保留真实依赖错误；不能把权限/网络故障伪装成能力不支持。
     return new GoIMConnector({
       client,
       capabilities: UNSUPPORTED_CAPABILITIES,
+      bootstrapFailure: mapGrpcError(error),
     });
   }
 }
