@@ -145,7 +145,32 @@ npm run lint
 npm run build
 ```
 
-## 6. 环境变量
+## 6. 本地 HTTP 冒烟测试
+
+冒烟测试是一次最短完整流程检查，不替代固定 Eval。它会调用真实 MiMo API（可能产生费用），并在本地 MySQL 保存合成演示会话；`--with-draft` 还会保存一份合成升级草稿，不会重发消息或提交外部工单。
+
+先在一个终端启动指定的 Fake 场景和非生产演示身份：
+
+```sh
+DEMO_SUPPORT_AUTO_AUTH=true FAKE_CONNECTOR_FIXTURE=write_failed npm run dev:fake
+```
+
+在另一个终端执行：
+
+```sh
+npm run test:smoke
+npm run test:smoke -- --with-draft
+```
+
+脚本固定访问 `127.0.0.1:3000`，验证伪造身份字段被拒绝、确定性分类、关键证据、MySQL 多轮状态版本递增、Trace 查询与只读回放，以及可选的草稿幂等确认。只输出检查状态，不输出确认 Token、模型 Key、密码或消息正文。合成会话和可选草稿保留在本地库供演示查看，不会自动删除。
+
+MiMo 使用已验证的 `response_format=json_object` 协议，提示词描述必要字段，SDK 与 Zod 再校验输出；不依赖服务商强制执行 OpenAI 的 strict `json_schema`。当前整轮 API 运行期限为 120 秒，模型调用共享取消信号；单工具超时和重试上限仍由 ToolRegistry 独立限制。
+
+Go IM 的普通测试新增本机隔离 gRPC 传输验证（`npm test` 包含），覆盖 protobuf 的 int64 精度、追踪 metadata、空结果、权限拒绝、deadline 和非法观测时间。该服务只返回合成数据，不能替代 `npm run test:go-im` 的真实 OperationsQuery 联调。默认 proto 从应用根目录读取，并纳入 Next.js 生产文件追踪；自定义部署仍可设置 `GO_IM_OPERATIONS_PROTO_PATH`。
+
+Trace 当前在同一 Node.js 进程内共享，可以跨 Chat/查询/回放 Route 访问，但进程重启会丢失 Trace，不能用于多实例审计。会话状态和已确认草稿已存入 MySQL；Trace 的长期持久化不是本次单进程演示的保证。
+
+## 7. 环境变量
 
 | 变量 | 必需范围 | 用途 |
 | --- | --- | --- |
@@ -167,7 +192,7 @@ npm run build
 
 所有凭证变量均为服务端变量，禁止添加 `NEXT_PUBLIC_` 前缀。
 
-## 7. 提交前安全检查
+## 8. 提交前安全检查
 
 ```sh
 git status --short

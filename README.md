@@ -3,7 +3,7 @@
 面向客服的 IM 消息异常诊断 Agent。项目当前按小步垂直切片开发。
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-294%20passed-2ea44f)](#开发与验证)
+[![Tests](https://img.shields.io/badge/tests-303%20passed-2ea44f)](#开发与验证)
 [![License](https://img.shields.io/badge/license-private-lightgrey)](#)
 
 ## 文档导航
@@ -21,6 +21,7 @@
 | Eval 场景和执行边界            | [Eval Runner](docs/eval-runner.md)                               |
 | Trace 查询和回放               | [Trace 查询与回放](docs/trace-query-and-replay.md)               |
 | 本地启动、Connector 切换与演示 | [本地部署与演示](docs/local-deployment.md)                       |
+| 本地真实模型与数据库验证记录   | [2026-10-02 验证结果](docs/local-verification-2026-10-02.md)     |
 
 > OperationsQuery 是本项目推荐的 IM 侧只读诊断查询门面。它是一个可替换的接口契约，不是要求所有 IM 使用相同数据库、RPC 或表结构；接入方也可以提供语义等价的查询服务，再由 Connector 做映射。
 
@@ -78,6 +79,7 @@ npm run dev:fake
 npm run dev
 npm run dev:fake
 npm run dev:go-im
+npm run test:smoke -- --with-draft
 npm run typecheck
 npm test
 npm run build
