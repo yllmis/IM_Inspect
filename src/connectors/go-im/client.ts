@@ -73,7 +73,7 @@ type UnaryClient = {
     options: { deadline: Date },
     callback: (error: ServiceError | null, response: unknown) => void,
   ) => void;
-};
+} & { close(): void };
 
 /**
  * 传输层只负责 OperationsQuery gRPC，不负责 Canonical Model 或诊断分类。
@@ -85,7 +85,10 @@ export class OperationsQueryGrpcClient implements OperationsQueryClient {
 
   constructor(options: OperationsQueryGrpcClientOptions) {
     const protoPath =
-      options.protoPath ?? resolve(__dirname, "proto/operations.proto");
+      // Next.js 打包后 __dirname 指向 .next，不能再用源码目录定位 proto。
+      // 默认路径相对应用根目录；部署到其它目录时仍可显式指定 protoPath。
+      options.protoPath ??
+      resolve(process.cwd(), "src/connectors/go-im/proto/operations.proto");
     const definition: PackageDefinition = loadSync(protoPath, {
       longs: String,
       enums: String,
@@ -107,6 +110,11 @@ export class OperationsQueryGrpcClient implements OperationsQueryClient {
         : credentials.createInsecure(),
     );
     this.serviceToken = options.serviceToken;
+  }
+
+  /** 释放 gRPC 通道，供隔离测试和服务关闭使用；不会执行任何 IM 写操作。 */
+  close(): void {
+    this.client.close();
   }
 
   findUserReference(
