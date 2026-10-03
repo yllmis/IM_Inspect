@@ -28,11 +28,11 @@ metadata.set("x-im-service-token", process.env.GO_IM_SERVICE_TOKEN);
 metadata.set("x-request-id", "fault-deployment-probe");
 metadata.set("x-agent-run-id", "fault-deployment-probe");
 const fault = new operations.OperationsQuery(
-  "127.0.0.1:19100",
+  process.env.GO_IM_FAULT_GRPC_URL ?? "127.0.0.1:19100",
   credentials.createInsecure(),
 );
 const baseline = new operations.OperationsQuery(
-  "127.0.0.1:19101",
+  process.env.GO_IM_BASELINE_GRPC_URL ?? "127.0.0.1:19101",
   credentials.createInsecure(),
 );
 

@@ -120,6 +120,29 @@ npm run test:go-im
 
 未配置真实地址、令牌和隔离测试 ID 时，用例会明确显示为 `skipped`，不算测试通过。
 
+### 3.1 独立故障测试服务
+
+故障注入服务与正常查询服务分开运行：
+
+| 服务 | 端口 | 用途 |
+| --- | ---: | --- |
+| `yllmis-im-operations-query` | `9100` | 正常真实查询，不注入故障 |
+| `yllmis-im-operations-fault-test` | `9101` | 固定故障验证，不能作为生产查询入口 |
+
+故障服务使用固定 message ID 映射：`a1` 消息不存在、`a2` 查询超时、`a3` 权限拒绝、`a4` 返回错误消息 ID、`a5` 非法响应、`a6` 能力不支持。故障服务仍要求服务 Token，且不会加入正常 IM 的服务发现。
+
+公网联调前，除了服务器 UFW，还必须在云安全组增加一条精确规则：仅允许当前开发机公网 IP 访问 TCP `9101`。安全组未放行时，容器即使显示 `0.0.0.0:9101->9100/tcp`，公网仍会超时。
+
+公网故障服务探测：
+
+```sh
+GO_IM_FAULT_GRPC_URL=43.140.35.96:9101 \
+GO_IM_BASELINE_GRPC_URL=43.140.35.96:9100 \
+npm run test:go-im:fault
+```
+
+如果只验证服务器内部绑定，可临时使用 SSH 隧道；这只是部署探测手段，不是 Agent 的运行依赖。探测脚本只检查固定响应和错误码，不调用模型，也不把合成故障当成真实生产故障。
+
 ## 4. 可选启动 IM-Grpc OperationsQuery
 
 本项目不在 Next.js 中编译或启动 Go 服务。若本机同时存在 `/Users/yllmis/go_projects/IM-Grpc`，先启动它依赖的 MongoDB、etcd、user-rpc 和 social-rpc，再运行：
