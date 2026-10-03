@@ -24,6 +24,7 @@
     "test:mysql": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/persistence/mysql/*.integration.test.ts",
     "test:go-im": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run src/connectors/go-im/*.integration.test.ts",
     "test:smoke": "node --env-file-if-exists=.env.local scripts/smoke-local.mjs",
+    "test:go-im:fault": "node --env-file-if-exists=.env.local scripts/verify-fault-deployment.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
