@@ -45,12 +45,14 @@ import {
 } from "./schemas";
 
 const SOURCE = "go-im-operations-query";
-const UNSUPPORTED_CAPABILITIES: ConnectorCapabilities = {
-  messageLookup: "unsupported",
-  deliveryEvents: "unsupported",
-  historicalPresence: "unsupported",
-  ackTracking: "unsupported",
-  writeFailureEvents: "unsupported",
+const UNKNOWN_CAPABILITIES: ConnectorCapabilities = {
+  // 隧道/网络/权限导致 GetCapabilities 失败时只能标记 unknown。
+  // 标记 unsupported 会被 Tool 层提前拦截，掩盖真正的 dependency_unavailable。
+  messageLookup: "unknown",
+  deliveryEvents: "unknown",
+  historicalPresence: "unknown",
+  ackTracking: "unknown",
+  writeFailureEvents: "unknown",
 };
 
 export interface GoIMConnectorOptions {
@@ -414,7 +416,7 @@ export async function createGoIMConnector(
     // 能力读取失败时保留真实依赖错误；不能把权限/网络故障伪装成能力不支持。
     return new GoIMConnector({
       client,
-      capabilities: UNSUPPORTED_CAPABILITIES,
+      capabilities: UNKNOWN_CAPABILITIES,
       bootstrapFailure: mapGrpcError(error),
     });
   }

@@ -98,11 +98,16 @@ Agent 不直接访问 MongoDB、Redis、Kafka、日志平台、SQL 或 Shell。`
 
 ### 3.3 能力声明
 
-`GetCapabilities` 的每个能力取值只能是：
+`GetCapabilities` 成功时，每个能力取值只能是：
 
 ```text
 supported | partial | unsupported
 ```
+
+Connector 运行时还会使用内部状态 `unknown`：它只表示能力探测失败（例如 SSH
+隧道暂时断开或服务不可达），绝不能解释为 IM 明确声明“不支持”。此时工具应继续
+执行一次受控请求并返回 `dependency_unavailable`/`timeout` 等真实错误，不能提前
+生成 `unsupported_capability`。
 
 当前 Connector 映射：
 
@@ -114,7 +119,8 @@ supported | partial | unsupported
 | `ackHistory` | `ackTracking` |
 | `writeFailureEvents` | `writeFailureEvents` |
 
-如果能力查询失败，参考实现默认全部标记为 `unsupported`，宁可安全停止，也不虚报能力可用。
+如果能力查询失败，参考实现默认全部标记为 `unknown`，并在刷新间隔到期后重新探测；
+这样既不会把网络故障伪装成能力缺失，也不会虚报能力可用。
 
 ## 4. 安全边界
 

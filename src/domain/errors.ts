@@ -21,6 +21,8 @@ export const ConnectorCapabilityStatusSchema = z.enum([
   "supported",
   "partial",
   "unsupported",
+  // unknown 表示能力探测失败，不能等同于服务明确声明不支持。
+  "unknown",
 ]);
 export type ConnectorCapabilityStatus = z.infer<
   typeof ConnectorCapabilityStatusSchema

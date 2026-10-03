@@ -206,10 +206,23 @@ Trace 当前在同一 Node.js 进程内共享，可以跨 Chat/查询/回放 Rou
 | `GO_IM_SERVICE_TOKEN` | Go IM 可选 | gRPC 服务身份 Token |
 | `GO_IM_OPERATIONS_PROTO_PATH` | Go IM 可选 | 自定义 proto 路径；默认使用仓库副本 |
 | `GO_IM_INSECURE` | Go IM 可选 | 本地明文 gRPC；默认 `true` |
+| `GO_IM_CAPABILITY_REFRESH_MS` | Go IM 可选 | Connector 能力快照刷新间隔，默认 15000ms；不能替代网络健康检查 |
 | `MYSQL_TEST_URL` | MySQL 集成测试 | 只能指向隔离测试库 |
 | `GO_IM_TEST_*` | Go IM 集成测试 | 隔离环境测试 ID，不提交真实 ID |
 
 所有凭证变量均为服务端变量，禁止添加 `NEXT_PUBLIC_` 前缀。
+
+### 公网直连联调（仅在完成传输层安全后使用）
+
+如果本地开发确实需要直连服务器，OperationsQuery 必须同时满足：
+
+1. gRPC 服务启用 TLS，Agent 设置 `GO_IM_INSECURE=false`；
+2. 云安全组和主机防火墙只允许开发机固定公网 IP；
+3. 保留服务 Token、请求限流和审计；
+4. 最好使用独立的诊断查询端口，不与主业务 RPC 共用；
+5. 不把 MongoDB、Redis、Kafka 的端口作为 Agent 访问入口。
+
+仅修改监听地址为 `0.0.0.0:9100`，再配合 `GO_IM_INSECURE=true`，不属于可接受的联调方案。当前服务器仍建议使用回环监听 + SSH 隧道；若要长期稳定开发，优先使用 `autossh`/系统服务自动重连，或把 Agent 部署到同一内网。
 
 ## 8. 提交前安全检查
 

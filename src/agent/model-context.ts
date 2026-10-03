@@ -577,7 +577,12 @@ function fitToCharacterBudget(
   const capabilityEntries = Object.entries(
     context.connectorCapabilities ?? {},
   ).sort((left, right) => {
-    const priority = { supported: 0, partial: 1, unsupported: 2 } as const;
+    const priority = {
+      supported: 0,
+      partial: 1,
+      unknown: 2,
+      unsupported: 3,
+    } as const;
     return priority[left[1]] - priority[right[1]];
   });
   for (const [capability] of capabilityEntries) {

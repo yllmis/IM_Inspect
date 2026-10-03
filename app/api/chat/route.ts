@@ -13,33 +13,17 @@ import {
 } from "../../../src/persistence/mysql/connection";
 import { MySqlStateStore } from "../../../src/persistence/mysql/mysql-state-store";
 import { createToolContext } from "../../../src/tools/context";
-import { createInMemoryDraftRepository } from "../../../src/tools/draft-repository";
-import { ToolRegistry } from "../../../src/tools/registry";
 import { getTraceStore } from "../../../src/server/trace-runtime";
+import { ConnectorConfigurationError } from "../../../src/server/connector-runtime";
 import {
-  ConnectorConfigurationError,
-  createConnectorFromEnvironment,
-} from "../../../src/server/connector-runtime";
+  ToolRegistryRuntime,
+  readCapabilityRefreshMs,
+} from "../../../src/server/tool-registry-runtime";
 
 let stateStore: MySqlStateStore | undefined;
-let registryPromise: Promise<ToolRegistry> | undefined;
-
-function getToolRegistry(): Promise<ToolRegistry> {
-  registryPromise ??= createConnectorFromEnvironment()
-    .then(
-      (connector) =>
-        new ToolRegistry({
-          connector,
-          draftRepository: createInMemoryDraftRepository(),
-        }),
-    )
-    .catch((error) => {
-      // 配置修复后允许开发服务器下一次请求重新初始化。
-      registryPromise = undefined;
-      throw error;
-    });
-  return registryPromise;
-}
+const registryRuntime = new ToolRegistryRuntime({
+  refreshMs: readCapabilityRefreshMs(process.env.GO_IM_CAPABILITY_REFRESH_MS),
+});
 
 export async function POST(request: Request) {
   const parsed = ChatRequestSchema.safeParse(
@@ -79,7 +63,7 @@ export async function POST(request: Request) {
     deadline: Date.now() + 120_000,
   });
   try {
-    const registry = await getToolRegistry();
+    const registry = await registryRuntime.get();
     stateStore ??= new MySqlStateStore(
       createMySqlPool(readMySqlConnectionConfig()),
     );

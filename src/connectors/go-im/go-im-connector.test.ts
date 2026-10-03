@@ -379,4 +379,28 @@ describe("GoIMConnector", () => {
     ).toMatchObject({ ok: false, error: { code: "permission_denied" } });
     expect(getMessageRecord).not.toHaveBeenCalled();
   });
+
+  it("能力初始化失败时返回 unknown，工具层可以看到真实依赖错误", async () => {
+    const getMessageRecord = vi.fn();
+    const connector = new GoIMConnector({
+      client: client({ getMessageRecord }),
+      capabilities: {
+        messageLookup: "unknown",
+        deliveryEvents: "unknown",
+        historicalPresence: "unknown",
+        ackTracking: "unknown",
+        writeFailureEvents: "unknown",
+      },
+      bootstrapFailure: {
+        code: "dependency_unavailable",
+        message: "OperationsQuery unavailable",
+        retryable: true,
+      },
+    });
+    expect(connector.getCapabilities().messageLookup).toBe("unknown");
+    expect(
+      await connector.getMessageStatus({ messageId: "msg_001" }, context),
+    ).toMatchObject({ ok: false, error: { code: "dependency_unavailable" } });
+    expect(getMessageRecord).not.toHaveBeenCalled();
+  });
 });
