@@ -113,6 +113,12 @@ export class FakeConnector implements Connector {
         parsed.conversationId !== match.conversationId
       )
         return false;
+      if (
+        parsed.timeRange &&
+        (Date.parse(match.observedAt) < Date.parse(parsed.timeRange.start) ||
+          Date.parse(match.observedAt) > Date.parse(parsed.timeRange.end))
+      )
+        return false;
       return true;
     });
     const boundedMatches = matches.slice(0, parsed.limit);
@@ -131,6 +137,8 @@ export class FakeConnector implements Connector {
   getCapabilities(): ConnectorCapabilities {
     return {
       messageLookup: this.capabilityFor("getMessageStatus"),
+      // Fake 的候选搜索复用固定 lookupMatches，保持 Eval 可重复。
+      messageSearch: this.capabilityFor("getMessageStatus"),
       deliveryEvents: this.capabilityFor("getDeliveryEvents"),
       historicalPresence: this.capabilityFor("getConnectionStatus"),
     };

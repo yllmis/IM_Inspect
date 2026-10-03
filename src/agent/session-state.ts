@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { IdentifierSchema } from "../connectors/connector";
+import { IdentifierSchema, FindMatchSchema } from "../connectors/connector";
 import { ConnectionFactSchema } from "../domain/connection";
 import { DeliveryFactSchema } from "../domain/delivery";
 import {
@@ -215,6 +215,8 @@ export const AgentSessionStateSchema = z
     messageId: IdentifierSchema.nullable().default(null),
     timeRange: DiagnosisTimeRangeSchema.nullable().default(null),
     matchResolution: MatchResolutionSchema.nullable().default(null),
+    // 有界候选列表仅用于客服选择，不能成为 confirmedFacts 或诊断证据。
+    messageCandidates: z.array(FindMatchSchema).max(20).default([]),
     confirmedFacts: ConfirmedFactsSchema,
     evidence: z.array(EvidenceSchema).max(100).default([]),
     excludedHypotheses: z.array(ExcludedHypothesisSchema).max(20).default([]),

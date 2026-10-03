@@ -32,6 +32,7 @@ import {
   mapConnectionResponse,
   mapDeliveryTimeline,
   mapGrpcError,
+  mapMessageMatches,
   mapMessageRecord,
   mapUserMatches,
   unixNanoToIso,
@@ -42,6 +43,7 @@ import {
   RawDeliveryTimelineResponseSchema,
   RawFindUserReferenceResponseSchema,
   RawMessageRecordSchema,
+  RawSearchMessagesResponseSchema,
 } from "./schemas";
 
 const SOURCE = "go-im-operations-query";
@@ -49,6 +51,7 @@ const UNKNOWN_CAPABILITIES: ConnectorCapabilities = {
   // 隧道/网络/权限导致 GetCapabilities 失败时只能标记 unknown。
   // 标记 unsupported 会被 Tool 层提前拦截，掩盖真正的 dependency_unavailable。
   messageLookup: "unknown",
+  messageSearch: "unknown",
   deliveryEvents: "unknown",
   historicalPresence: "unknown",
   ackTracking: "unknown",
@@ -122,7 +125,9 @@ export class GoIMConnector implements Connector {
           {
             entityType: "message",
             messageId: message.messageId,
-            userId: message.receiverId,
+            // FindMatch.userId 表示消息发送方；接收方通过后续 MessageFact 保留。
+            userId: message.senderId,
+            receiverId: message.receiverId,
             conversationId: message.conversationId,
             observedAt:
               message.statusAt ?? message.createdAt ?? this.now().toISOString(),
@@ -131,6 +136,56 @@ export class GoIMConnector implements Connector {
         ],
         truncated: false,
       });
+    }
+    if (parsed.userId && parsed.timeRange) {
+      const capabilityError = this.requireCapability("messageSearch");
+      if (capabilityError)
+        return capabilityError as ConnectorResult<FindUserOrMessageResult>;
+      try {
+        const raw = RawSearchMessagesResponseSchema.parse(
+          await this.client.searchMessages(
+            {
+              senderId: parsed.userId,
+              startTime: toUnixNano(parsed.timeRange.start),
+              endTime: toUnixNano(parsed.timeRange.end),
+              limit: parsed.limit,
+            },
+            context,
+            this.deadline(context),
+          ),
+        );
+        const matches = mapMessageMatches(raw);
+        // 数据源也可能返回错对象；Schema 只能验形状，这里再验查询关联关系。
+        if (
+          raw.messages.some(
+            (row) =>
+              row.senderId !== parsed.userId ||
+              !/^[a-f0-9]{24}$/i.test(row.messageId) ||
+              BigInt(row.createdAt) <
+                BigInt(toUnixNano(parsed.timeRange!.start)) ||
+              BigInt(row.createdAt) > BigInt(toUnixNano(parsed.timeRange!.end)),
+          )
+        )
+          throw new Error(
+            "message search returned a row outside the requested scope",
+          );
+        if (!unixNanoToIso(raw.observedAt))
+          throw new Error("message search is missing observedAt");
+        return this.success(
+          FindUserOrMessageResultSchema.parse({
+            resolutionStatus:
+              matches.length === 0
+                ? "none"
+                : matches.length === 1 && !raw.truncated
+                  ? "unique"
+                  : "multiple",
+            matches: matches.slice(0, parsed.limit),
+            truncated: raw.truncated || matches.length > parsed.limit,
+          }),
+        );
+      } catch (error) {
+        return this.failureFrom(error);
+      }
     }
     const capabilityError = this.requireCapability("messageLookup");
     if (capabilityError)

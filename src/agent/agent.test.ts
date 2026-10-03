@@ -122,6 +122,112 @@ function testRuntime(connector = new FakeConnector("delivered")) {
 }
 
 describe("runAgent stateful loop", () => {
+  it.each([0, 1, 2])(
+    "发送方时间搜索返回 %i 条时先追问，不自动生成事实",
+    async (count) => {
+      const connector = new FakeConnector("delivered");
+      connector.findUserOrMessage = async () => ({
+        ok: true,
+        source: "synthetic-search-test",
+        data: {
+          resolutionStatus:
+            count === 0 ? "none" : count === 1 ? "unique" : "multiple",
+          truncated: false,
+          matches: Array.from({ length: count }, (_, index) => ({
+            entityType: "message" as const,
+            messageId: `msg_candidate_${index}`,
+            userId: "sender",
+            receiverId: "receiver",
+            createdAt: "2026-09-07T07:00:00Z",
+            observedAt: "2026-09-07T08:00:00Z",
+            evidence: [
+              {
+                id: `search-${index}`,
+                source: "synthetic-search-test",
+                kind: "message" as const,
+                field: "message_search_candidate",
+                value: `msg_candidate_${index}`,
+                observedAt: "2026-09-07T08:00:00Z",
+              },
+            ],
+          })),
+        },
+      });
+      const runtime = testRuntime(connector);
+      const model = new MockLanguageModelV4({
+        doGenerate: [
+          textResult(
+            JSON.stringify({
+              messageId: null,
+              userId: "sender",
+              conversationId: null,
+              timeRange: {
+                start: "2026-09-07T06:00:00Z",
+                end: "2026-09-07T08:00:00Z",
+              },
+              problemType: "message_not_received",
+            }),
+          ),
+        ],
+      });
+      const result = await runAgent({
+        sessionId: `session_search_${count}`,
+        text: "sender 在这个时间段发的消息为什么没收到？",
+        model,
+        toolContext: runtime.context(`run_search_${count}`),
+        registry: runtime.registry,
+        stateStore: runtime.store,
+        traceStore: runtime.traceStore,
+        now: runtime.now,
+      });
+      expect(result.status).toBe("awaiting_information");
+      expect(result.diagnosis.classification).toBe("insufficient_data");
+      expect(result.diagnosis.facts).toEqual([]);
+      expect(result.toolCalls.map((call) => call.name)).toEqual([
+        "find_user_or_message",
+      ]);
+      expect(model.doGenerateCalls).toHaveLength(1);
+      const saved = await runtime.store.load({
+        sessionId: `session_search_${count}`,
+        tenantId: "tenant_test",
+        actorId: "support_test",
+      });
+      expect(saved?.messageId).toBeNull();
+      expect(saved?.confirmedFacts.message).toBeNull();
+      expect(saved?.evidence).toEqual([]);
+      expect(saved?.messageCandidates).toHaveLength(count);
+      expect(result.reply).toContain(count ? "请复制" : "查询成功");
+    },
+  );
+
+  it("只有 User ID 时要求补充时间，不能无界搜索", async () => {
+    const runtime = testRuntime();
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        textResult(
+          JSON.stringify({
+            messageId: null,
+            userId: "sender",
+            conversationId: null,
+            timeRange: null,
+            problemType: null,
+          }),
+        ),
+      ],
+    });
+    const result = await runAgent({
+      sessionId: "search_no_time",
+      text: "sender 的消息没收到",
+      model,
+      toolContext: runtime.context("run_no_time"),
+      registry: runtime.registry,
+      stateStore: runtime.store,
+      now: runtime.now,
+    });
+    expect(result.toolCalls).toEqual([]);
+    expect(result.reply).toContain("时间范围");
+  });
+
   it("保存模型异常的失败 Trace，且不泄露异常消息", async () => {
     const runtime = testRuntime();
     const secretMessage = "database-password=do-not-log";

@@ -14,6 +14,7 @@ const context: ConnectorRequestContext = {
 const observedAt = "1760000000000000000";
 const capabilities = {
   messageLookup: "supported" as const,
+  messageSearch: "supported" as const,
   deliveryEvents: "supported" as const,
   historicalPresence: "supported" as const,
   ackTracking: "unsupported" as const,
@@ -24,6 +25,11 @@ function client(
   overrides: Partial<OperationsQueryClient> = {},
 ): OperationsQueryClient {
   return {
+    searchMessages: vi.fn(async () => ({
+      messages: [],
+      truncated: false,
+      observedAt,
+    })),
     findUserReference: vi.fn(async () => ({ users: [] })),
     getMessageRecord: vi.fn(async () => ({
       found: true,
@@ -64,6 +70,74 @@ function client(
 }
 
 describe("GoIMConnector", () => {
+  it("按发送方和时间范围返回消息候选，不把多条消息选成唯一目标", async () => {
+    const searchMessages = vi.fn(async () => ({
+      messages: [
+        {
+          messageId: "665f1c000000000000000001",
+          conversationId: "conv_001",
+          senderId: "user_sender",
+          receiverId: "user_receiver",
+          createdAt: "1767225601000000000",
+        },
+        {
+          messageId: "665f1c000000000000000002",
+          conversationId: "conv_002",
+          senderId: "user_sender",
+          receiverId: "user_other",
+          createdAt: "1767225602000000000",
+        },
+      ],
+      truncated: true,
+      observedAt,
+    }));
+    const connector = new GoIMConnector({
+      client: client({ searchMessages }),
+      capabilities,
+    });
+    const result = await connector.findUserOrMessage(
+      {
+        userId: "user_sender",
+        timeRange: {
+          start: "2026-01-01T00:00:00.000Z",
+          end: "2026-01-01T00:10:00.000Z",
+        },
+        limit: 10,
+      },
+      context,
+    );
+
+    expect(searchMessages).toHaveBeenCalledWith(
+      {
+        senderId: "user_sender",
+        startTime: "1767225600000000000",
+        endTime: "1767226200000000000",
+        limit: 10,
+      },
+      context,
+      expect.any(Number),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        resolutionStatus: "multiple",
+        truncated: true,
+        matches: [
+          {
+            entityType: "message",
+            messageId: "665f1c000000000000000001",
+            userId: "user_sender",
+          },
+          {
+            entityType: "message",
+            messageId: "665f1c000000000000000002",
+            userId: "user_sender",
+          },
+        ],
+      },
+    });
+  });
+
   it("将 OperationsQuery 的已存在消息映射为 Canonical MessageFact", async () => {
     const connector = new GoIMConnector({ client: client(), capabilities });
     const result = await connector.getMessageStatus(
@@ -386,6 +460,7 @@ describe("GoIMConnector", () => {
       client: client({ getMessageRecord }),
       capabilities: {
         messageLookup: "unknown",
+        messageSearch: "unknown",
         deliveryEvents: "unknown",
         historicalPresence: "unknown",
         ackTracking: "unknown",

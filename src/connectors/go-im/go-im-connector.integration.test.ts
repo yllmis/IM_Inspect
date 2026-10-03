@@ -11,6 +11,8 @@ const missingMessageId = process.env.GO_IM_TEST_MISSING_MESSAGE_ID;
 const userId = process.env.GO_IM_TEST_USER_ID;
 const permissionMessageId = process.env.GO_IM_TEST_PERMISSION_MESSAGE_ID;
 const timeoutMessageId = process.env.GO_IM_TEST_TIMEOUT_MESSAGE_ID;
+const searchStart = process.env.GO_IM_TEST_SEARCH_START;
+const searchEnd = process.env.GO_IM_TEST_SEARCH_END;
 
 const context: ConnectorRequestContext = {
   tenantId: "integration-test",
@@ -135,6 +137,38 @@ describe.skipIf(!configured)("GoIMConnector 真实 OperationsQuery 集成", () =
         expect(["unsupported_capability", "not_found"]).toContain(
           connection.error.code,
         );
+      }
+    },
+  );
+
+  it.skipIf(!messageConfigured || !userId || !searchStart || !searchEnd)(
+    "验证按用户和时间范围搜索消息候选，不把候选直接当作已确认事实",
+    async () => {
+      const connector = await createGoIMConnector({
+        address: address!,
+        serviceToken: serviceToken!,
+        bootstrapContext: context,
+      });
+      const result = await connector.findUserOrMessage(
+        {
+          userId: userId!,
+          timeRange: { start: searchStart!, end: searchEnd! },
+          limit: 10,
+        },
+        context,
+      );
+      if (!result.ok) {
+        expect(result.error.code).toBe("unsupported_capability");
+        return;
+      }
+      expect(result.data.matches.length).toBeLessThanOrEqual(10);
+      expect(["unique", "multiple", "none"]).toContain(
+        result.data.resolutionStatus,
+      );
+      for (const match of result.data.matches) {
+        expect(match.entityType).toBe("message");
+        expect(match.userId).toBe(userId);
+        expect(match.messageId).toMatch(/^[a-f0-9]{24}$/i);
       }
     },
   );

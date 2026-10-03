@@ -154,6 +154,7 @@ describe("Go IM 映射函数", () => {
       } as never),
     ).toEqual({
       messageLookup: "supported",
+      messageSearch: "unsupported",
       deliveryEvents: "partial",
       historicalPresence: "unsupported",
       ackTracking: "unsupported",

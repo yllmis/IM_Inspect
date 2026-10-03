@@ -25,6 +25,7 @@ Agent 不直接访问 MongoDB、Redis、Kafka、日志平台、SQL 或 Shell。`
 | RPC | 用途 | 成功但无数据 | 不能伪造的语义 |
 | --- | --- | --- | --- |
 | `FindUserReference` | 按 `userId` 或昵称查用户引用 | `users=[]` | 多个匹配不能自动选择 |
+| `SearchMessages` | 按发送方、可选接收方和有限时间范围定位消息候选 | `messages=[]` | 只返回候选引用，不能直接当成已确认消息 |
 | `GetMessageRecord` | 查询单条消息元数据，不返回正文 | `found=false` | `found=false` 只表示查询成功且无记录 |
 | `GetMessageTimeline` | 查询消息生命周期事件 | 空事件列表需结合完整性字段 | 不完整时间线不能当成完整无事件 |
 | `GetDeliveryTimeline` | 查询按接收方拆分的投递事件 | 空事件列表需结合完整性字段 | 不能把“未记录”当成“未投递” |
@@ -32,6 +33,17 @@ Agent 不直接访问 MongoDB、Redis、Kafka、日志平台、SQL 或 Shell。`
 | `GetCapabilities` | 声明实例实际支持能力 | 不适用 | 不得虚报 `supported` |
 
 完整 proto 参考位于 [`src/connectors/go-im/proto/operations.proto`](../src/connectors/go-im/proto/operations.proto)。IM-Grpc 的服务实现位于其 `apps/operations/rpc` 模块；这里的 proto 副本用于让 Agent 项目能够独立加载客户端，不依赖开发机绝对路径。
+
+### 2.1 按用户定位消息的推荐契约
+
+客服通常只有 `userId` 和大致发送时间，而没有 `messageId`。此时 Connector 调用
+`SearchMessages`，请求必须包含发送方和不超过 7 天的时间范围，并可选接收方、限制条数。
+返回的每一行只是候选 `messageId`，Agent 必须让客服选择或补充精确 ID，随后再调用
+`GetMessageRecord`、投递和连接查询。候选结果不会写入 `confirmedFacts`，也不会直接触发诊断分类。
+
+当 `truncated=true` 时，结果不是唯一集合，客服应缩小时间范围或提供接收方；空数组只有在
+RPC 成功返回时才表示该范围内没有匹配记录。超时、权限错误和旧服务返回
+`UNIMPLEMENTED` 必须保持为对应错误/能力状态，不能变成 `messages=[]`。
 
 ## 3. 字段和错误约束
 
@@ -114,6 +126,7 @@ Connector 运行时还会使用内部状态 `unknown`：它只表示能力探测
 | OperationsQuery | Canonical Model 能力 |
 | --- | --- |
 | `messageRecord` | `messageLookup` |
+| `messageSearch` | 按用户和时间定位消息候选；不是消息事实 |
 | `deliveryEvents` | `deliveryEvents` |
 | `historicalConnection` | `historicalPresence` |
 | `ackHistory` | `ackTracking` |
@@ -121,6 +134,10 @@ Connector 运行时还会使用内部状态 `unknown`：它只表示能力探测
 
 如果能力查询失败，参考实现默认全部标记为 `unknown`，并在刷新间隔到期后重新探测；
 这样既不会把网络故障伪装成能力缺失，也不会虚报能力可用。
+
+旧版 OperationsQuery 没有 `SearchMessages` 方法或 `messageSearch` 字段时，属于兼容的
+“能力未部署”，GoIMConnector 会明确返回 `unsupported_capability`；它不会静默切换到
+FakeConnector，也不会用 `GetMessageRecord` 猜测消息不存在。
 
 ## 4. 安全边界
 

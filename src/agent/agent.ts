@@ -261,6 +261,13 @@ async function runAgentLoop(
             JSON.stringify(extractionContext).length,
         ),
     });
+    // 搜索列表不是客户已选择的对象。要求客服复制具体 ID，防止模型擅自选择最新一条。
+    if (
+      state.messageCandidates.length > 0 &&
+      extracted.messageId &&
+      !input.text.includes(extracted.messageId)
+    )
+      extracted.messageId = null;
     const candidatePatch = nonNullCandidatePatch(extracted);
     traceRecorder.recordAgent("extract_context", extractionStarted, "success", {
       extractedFields: Object.keys(candidatePatch ?? {}),
@@ -332,6 +339,63 @@ async function runAgentLoop(
     lastToolFailed = !response.ok;
     return modelToolResult(state, response, contextBudget);
   };
+
+  // 候选定位是确定性流程：先搜索再停下来请客服选择，LLM 不拥有目标选择权。
+  if (
+    !state.messageId &&
+    !state.candidateContext.messageId &&
+    state.candidateContext.userId
+  ) {
+    let reply =
+      "请提供该用户发送消息的大致时间范围（开始和结束时间），或直接提供 messageId。";
+    if (state.candidateContext.timeRange) {
+      await execute("find_user_or_message", {
+        userId: state.candidateContext.userId,
+        timeRange: state.candidateContext.timeRange,
+        limit: 10,
+      });
+      const searchResponse = calls.at(-1)!.response;
+      if (!searchResponse.ok) {
+        reply = `候选消息查询失败（${searchResponse.error.code}），不能判断消息不存在。请稍后重试或提供 messageId。`;
+      } else {
+        const candidates = state.messageCandidates;
+        const truncated = (searchResponse.data as { truncated: boolean })
+          .truncated;
+        reply =
+          candidates.length === 0
+            ? "查询成功，但此发送方和时间范围内没有消息记录；这不代表写入失败。请核对 User ID、缩小或修正时间范围，或提供 messageId。"
+            : `找到${truncated ? "至少" : ""} ${candidates.length} 条候选消息：\n${candidates.map((row) => `${row.messageId} | ${row.createdAt ?? "时间未知"} | 接收方 ${row.receiverId ?? "未知"}`).join("\n")}\n${truncated ? "结果已截断，请缩小时间范围；" : ""}请复制需要排查的 messageId 回复我。确认前不会自动诊断任何一条消息。`;
+      }
+    }
+    state = AgentSessionStateSchema.parse({
+      ...state,
+      status: "awaiting_information",
+      pendingQuestion: {
+        field: state.candidateContext.timeRange ? "messageId" : "timeRange",
+        question: reply.slice(0, 500),
+        askedAt: now().toISOString(),
+      },
+    });
+    state = recordConversationExchange(state, {
+      userText: input.text,
+      assistantText: reply,
+      now: now(),
+      budget: contextBudget,
+    });
+    const saved = await input.stateStore.save(state, expectedVersion);
+    return executionResult({
+      state: saved,
+      diagnosis: diagnosis.result,
+      reply,
+      modelText: "",
+      calls,
+      steps: 0,
+      stopReason: "ask_for_information",
+      tokenUsage: runTokenBudget.snapshot(),
+      traceRecorder,
+      traceStore: input.traceStore,
+    });
+  }
 
   const requestedMaxSteps = input.maxSteps ?? contextBudget.maxAgentSteps;
   if (!Number.isSafeInteger(requestedMaxSteps) || requestedMaxSteps <= 0) {

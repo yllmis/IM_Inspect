@@ -87,6 +87,8 @@ export const FindMatchSchema = z
   .object({
     entityType: z.enum(["user", "message"]),
     userId: z.string().min(1).max(128).optional(),
+    receiverId: z.string().min(1).max(128).optional(),
+    createdAt: z.string().datetime({ offset: true }).optional(),
     displayName: z.string().min(1).max(100).optional(),
     conversationId: z.string().min(1).max(128).optional(),
     messageId: z.string().min(1).max(128).optional(),

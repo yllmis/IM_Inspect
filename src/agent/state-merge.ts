@@ -144,6 +144,12 @@ export function mergeCandidateContext(
     },
   };
 
+  // 客服明确提供新的 messageId 后，旧的候选列表只属于上一次搜索，
+  // 不能继续让模型或工作台把它误认为当前诊断对象。
+  if (patch.messageId && patch.messageId !== state.candidateContext.messageId) {
+    next.messageCandidates = [];
+  }
+
   // 当前没有已确认 messageId 时，候选对象从 A 切到 B 不需要人工切换确认，
   // 但上一候选对象的错误、证据和诊断结果必须清理，防止 A6 污染 A1 的回复。
   if (
@@ -163,6 +169,7 @@ export function mergeCandidateContext(
     next.unsupportedCapabilities = [];
     next.conflicts = [];
     next.calledTools = [];
+    next.messageCandidates = [];
     next.toolErrors = [];
     next.diagnosisResultId = null;
     next.diagnosisResult = null;
@@ -412,7 +419,7 @@ export function mergeToolResult(
 
   switch (toolName) {
     case "find_user_or_message":
-      next = mergeFindResult(next, response.data);
+      next = mergeFindResult(next, response.data, args);
       break;
     case "get_message_status":
       next = mergeMessageResult(next, args, response.data);
@@ -545,6 +552,7 @@ export function hashToolInput(
 function mergeFindResult(
   state: AgentSessionState,
   rawData: unknown,
+  args: unknown,
 ): AgentSessionState {
   const result = FindUserOrMessageResultSchema.parse(rawData);
   if (result.resolutionStatus === "unique" && result.matches.length !== 1) {
@@ -561,6 +569,15 @@ function mergeFindResult(
   }
 
   const next = { ...state, matchResolution: result.resolutionStatus };
+  const lookup = FindUserOrMessageInputSchema.parse(args);
+  if (!lookup.messageId && lookup.userId && lookup.timeRange) {
+    // Search 的唯一候选也不自动选中；客服下一轮明确提供 messageId 后再查状态。
+    return {
+      ...next,
+      messageCandidates: result.matches,
+      matchResolution: "insufficient_data",
+    };
+  }
   if (result.resolutionStatus !== "unique") return next;
   const match = result.matches[0]!;
   requireEvidence(match.evidence, "unique lookup result");
@@ -612,6 +629,7 @@ function mergeMessageResult(
   return {
     ...state,
     messageId: message.messageId,
+    messageCandidates: [],
     conversationId: message.conversationId ?? state.conversationId,
     matchResolution: "unique",
     confirmedFacts: { ...state.confirmedFacts, message },

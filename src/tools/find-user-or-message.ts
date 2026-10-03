@@ -25,7 +25,10 @@ export function findUserOrMessageDefinition(
     inputSchema: FindUserOrMessageInputSchema,
     async run(args, context) {
       const input = FindUserOrMessageInputSchema.parse(args);
-      requireCapability(connector, "messageLookup");
+      // User ID + 时间范围是“搜索候选消息”，不能误用单条消息查询能力。
+      const capability =
+        input.userId && input.timeRange ? "messageSearch" : "messageLookup";
+      requireCapability(connector, capability);
       const result = parseResult(
         FindUserOrMessageResultSchema,
         unwrapConnector(
@@ -35,6 +38,8 @@ export function findUserOrMessageDefinition(
       const matches = result.matches.slice(0, input.limit).map((match) => ({
         entityType: match.entityType,
         userId: match.userId,
+        receiverId: match.receiverId,
+        createdAt: match.createdAt,
         conversationId: match.conversationId,
         messageId: match.messageId,
         observedAt: match.observedAt,

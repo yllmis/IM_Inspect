@@ -3,12 +3,33 @@ syntax = "proto3";
 package operations;
 
 service OperationsQuery {
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
   rpc FindUserReference(FindUserReferenceRequest) returns (FindUserReferenceResponse);
   rpc GetMessageRecord(GetMessageRecordRequest) returns (GetMessageRecordResponse);
   rpc GetMessageTimeline(GetMessageTimelineRequest) returns (GetMessageTimelineResponse);
   rpc GetDeliveryTimeline(GetDeliveryTimelineRequest) returns (GetDeliveryTimelineResponse);
   rpc GetConnectionObservations(GetConnectionObservationsRequest) returns (GetConnectionObservationsResponse);
   rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+}
+
+message SearchMessagesRequest {
+  string senderId = 1;
+  string receiverId = 2;
+  int64 startTime = 3;
+  int64 endTime = 4;
+  int32 limit = 5;
+}
+message MessageReference {
+  string messageId = 1;
+  string conversationId = 2;
+  string senderId = 3;
+  string receiverId = 4;
+  int64 createdAt = 5;
+}
+message SearchMessagesResponse {
+  repeated MessageReference messages = 1;
+  bool truncated = 2;
+  int64 observedAt = 3;
 }
 
 message FindUserReferenceRequest { string userId = 1; string nickname = 2; string phone = 3; int32 limit = 4; }
@@ -61,5 +82,5 @@ message GetCapabilitiesRequest {}
 message GetCapabilitiesResponse {
   string messageRecord = 1; string messageTimeline = 2; string deliveryEvents = 3;
   string historicalConnection = 4; string ackHistory = 5; string writeFailureEvents = 6;
-  string readConfirmation = 7; int64 observedAt = 8; string observationEnabled = 9; string ackMode = 10;
+  string readConfirmation = 7; int64 observedAt = 8; string observationEnabled = 9; string ackMode = 10; string messageSearch = 11;
 }

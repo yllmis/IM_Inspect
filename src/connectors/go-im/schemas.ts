@@ -24,6 +24,28 @@ export type RawFindUserReferenceResponse = z.infer<
   typeof RawFindUserReferenceResponseSchema
 >;
 
+export const RawMessageReferenceSchema = z
+  .object({
+    messageId: z.string(),
+    conversationId: z.string().optional().default(""),
+    senderId: z.string().optional().default(""),
+    receiverId: z.string().optional().default(""),
+    createdAt: OptionalLongSchema,
+  })
+  .passthrough();
+export type RawMessageReference = z.infer<typeof RawMessageReferenceSchema>;
+
+export const RawSearchMessagesResponseSchema = z
+  .object({
+    messages: z.array(RawMessageReferenceSchema).max(21),
+    truncated: z.boolean(),
+    observedAt: OptionalLongSchema,
+  })
+  .passthrough();
+export type RawSearchMessagesResponse = z.infer<
+  typeof RawSearchMessagesResponseSchema
+>;
+
 export const RawMessageRecordSchema = z
   .object({
     found: z.boolean(),
@@ -166,6 +188,7 @@ export const RawCapabilitiesSchema = z
     historicalConnection: z.string().optional().default("unsupported"),
     ackHistory: z.string().optional().default("unsupported"),
     writeFailureEvents: z.string().optional().default("unsupported"),
+    messageSearch: z.string().optional().default("unsupported"),
     readConfirmation: z.string().optional().default("unsupported"),
     observedAt: OptionalLongSchema,
     observationEnabled: z.string().optional().default("unknown"),

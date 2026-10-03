@@ -14,6 +14,7 @@ import {
   RawDeliveryTimelineResponse,
   RawFindUserReferenceResponse,
   RawMessageRecord,
+  RawSearchMessagesResponse,
 } from "./schemas";
 
 const NANOSECONDS_PER_MILLISECOND = BigInt(1_000_000);
@@ -98,6 +99,7 @@ export function mapMessageRecord(
 export function mapUserMatches(raw: RawFindUserReferenceResponse): Array<{
   entityType: "user";
   userId: string;
+  receiverId?: string;
   displayName?: string;
   observedAt: string;
   evidence: Evidence[];
@@ -118,6 +120,49 @@ export function mapUserMatches(raw: RawFindUserReferenceResponse): Array<{
           observedAt,
           "user_reference",
           user.userId,
+        ),
+      ],
+    };
+  });
+}
+
+/** 搜索结果仍是候选定位，不是 MessageFact；必须由后续 get_message_status 确认。 */
+export function mapMessageMatches(raw: RawSearchMessagesResponse): Array<{
+  entityType: "message";
+  userId: string;
+  receiverId?: string;
+  createdAt: string;
+  conversationId?: string;
+  messageId: string;
+  observedAt: string;
+  evidence: Evidence[];
+}> {
+  return raw.messages.map((message) => {
+    const observedAt = requiredObservedAt(
+      raw.observedAt,
+      "message search response",
+    );
+    const source = "operations-query";
+    const createdAt = requiredObservedAt(
+      message.createdAt,
+      "message creation time",
+    );
+    return {
+      entityType: "message" as const,
+      userId: message.senderId,
+      receiverId: message.receiverId,
+      createdAt,
+      conversationId: message.conversationId || undefined,
+      messageId: message.messageId,
+      observedAt,
+      evidence: [
+        evidence(
+          `${source}:search:${message.messageId}`,
+          source,
+          "message",
+          observedAt,
+          "message_search_candidate",
+          message.messageId,
         ),
       ],
     };
@@ -297,6 +342,7 @@ function capability(value: string): "supported" | "partial" | "unsupported" {
 export function mapCapabilities(raw: RawCapabilities): ConnectorCapabilities {
   return {
     messageLookup: capability(raw.messageRecord),
+    messageSearch: capability(raw.messageSearch),
     deliveryEvents: capability(raw.deliveryEvents),
     historicalPresence: capability(raw.historicalConnection),
     ackTracking: capability(raw.ackHistory),

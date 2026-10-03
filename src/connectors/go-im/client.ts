@@ -15,9 +15,21 @@ import {
   RawFindUserReferenceResponse,
   RawMessageRecord,
   RawMessageTimelineResponse,
+  RawSearchMessagesResponse,
 } from "./schemas";
 
 export interface OperationsQueryClient {
+  searchMessages(
+    request: {
+      senderId: string;
+      receiverId?: string;
+      startTime: string;
+      endTime: string;
+      limit: number;
+    },
+    context: ConnectorRequestContext,
+    deadline: number,
+  ): Promise<unknown>;
   findUserReference(
     request: { userId?: string; nickname?: string; limit: number },
     context: ConnectorRequestContext,
@@ -128,6 +140,25 @@ export class OperationsQueryGrpcClient implements OperationsQueryClient {
       context,
       deadline,
     ) as Promise<RawFindUserReferenceResponse>;
+  }
+
+  searchMessages(
+    request: {
+      senderId: string;
+      receiverId?: string;
+      startTime: string;
+      endTime: string;
+      limit: number;
+    },
+    context: ConnectorRequestContext,
+    deadline: number,
+  ) {
+    return this.call(
+      "searchMessages",
+      request,
+      context,
+      deadline,
+    ) as Promise<RawSearchMessagesResponse>;
   }
 
   getMessageRecord(

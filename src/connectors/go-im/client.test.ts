@@ -43,6 +43,16 @@ describe("OperationsQuery gRPC transport", () => {
       operations: { OperationsQuery: { service: ServiceDefinition } };
     };
     server.addService(loaded.operations.OperationsQuery.service, {
+      searchMessages(
+        call: ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>,
+        callback: sendUnaryData<Record<string, unknown>>,
+      ) {
+        callback(null, {
+          messages: [],
+          truncated: false,
+          observedAt,
+        });
+      },
       getMessageRecord(
         call: ServerUnaryCall<{ messageId: string }, Record<string, unknown>>,
         callback: sendUnaryData<Record<string, unknown>>,
@@ -91,6 +101,7 @@ describe("OperationsQuery gRPC transport", () => {
       timeoutMs: 200,
       capabilities: {
         messageLookup: "supported",
+        messageSearch: "supported",
         deliveryEvents: "unsupported",
         historicalPresence: "unsupported",
         ackTracking: "unsupported",
