@@ -365,6 +365,15 @@ export function buildModelContext(
     }
   }
 
+  if (purpose === "generate_response" && options.currentUserText?.trim()) {
+    context.currentUserText = truncateText(
+      options.currentUserText.trim(),
+      budget.maxCurrentQuestionCharacters,
+      "currentUserTextCharacters",
+      omitted,
+    );
+  }
+
   fitToCharacterBudget(context, maximum, omitted);
   updateContextStatus(context, maximum, omitted);
   return ModelContextSchema.parse(context);

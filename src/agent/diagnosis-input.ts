@@ -16,7 +16,8 @@ export function buildDiagnosisInput(
     rawText,
     userId: state.userId ?? undefined,
     conversationId: state.conversationId ?? undefined,
-    messageId: state.messageId ?? undefined,
+    // 候选 ID 只用于路由下一步查询；没有工具证据时不会生成消息事实。
+    messageId: state.messageId ?? state.candidateContext.messageId ?? undefined,
     timeRange: state.timeRange ?? undefined,
     problemType:
       state.currentIssue.problemType ??

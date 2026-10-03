@@ -34,6 +34,15 @@ export function fallbackReply(result: DiagnosisResult): string {
     case "delivered":
       return "已确认消息成功投递。";
     default:
+      if (result.toolErrors?.length) {
+        const errors = result.toolErrors
+          .map((item) => `${item.tool}:${item.error.code}`)
+          .join("、");
+        return `本次查询未完成（${errors}），当前证据不足，无法确认消息是否存在或投递失败。`;
+      }
+      if (result.unsupportedCapabilities.length) {
+        return `当前查询能力不支持（${result.unsupportedCapabilities.join("、")}），暂时无法确认消息状态。`;
+      }
       return result.missingInformation.length > 0
         ? `还需要补充：${result.missingInformation.join("、")}。`
         : "目前证据不足，暂时无法确定消息异常原因。";

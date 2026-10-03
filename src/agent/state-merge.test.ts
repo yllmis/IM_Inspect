@@ -114,6 +114,33 @@ describe("mergeCandidateContext", () => {
       confirmedFacts: { message: { messageId: "msg_delivered" } },
     });
   });
+
+  it("clears stale unconfirmed target errors when candidate changes", () => {
+    const state = AgentSessionStateSchema.parse({
+      ...mergeCandidateContext(session(), { messageId: "msg_a6" }).state,
+      unsupportedCapabilities: ["messageLookup"],
+      toolErrors: [
+        {
+          tool: "find_user_or_message",
+          error: {
+            code: "unsupported_capability",
+            message: "old target capability error",
+            retryable: false,
+          },
+        },
+      ],
+    });
+    const result = mergeCandidateContext(state, { messageId: "msg_a1" }, now);
+
+    expect(result.state).toMatchObject({
+      candidateContext: { messageId: "msg_a1" },
+      messageId: null,
+      confirmedFacts: { message: null, deliveries: [] },
+      unsupportedCapabilities: [],
+      toolErrors: [],
+      diagnosisResult: null,
+    });
+  });
 });
 
 describe("resolveTargetSwitch", () => {

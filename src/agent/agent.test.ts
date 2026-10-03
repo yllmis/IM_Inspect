@@ -536,7 +536,7 @@ describe("runAgent stateful loop", () => {
       stopReason: "tool_error",
       diagnosis: {
         classification: "insufficient_data",
-        missingInformation: ["messageId"],
+        missingInformation: ["get_message_status:timeout"],
         toolErrors: [
           { tool: "get_message_status", error: { code: "timeout" } },
         ],

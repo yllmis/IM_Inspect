@@ -144,6 +144,32 @@ export function mergeCandidateContext(
     },
   };
 
+  // 当前没有已确认 messageId 时，候选对象从 A 切到 B 不需要人工切换确认，
+  // 但上一候选对象的错误、证据和诊断结果必须清理，防止 A6 污染 A1 的回复。
+  if (
+    patch.messageId &&
+    state.candidateContext.messageId &&
+    patch.messageId !== state.candidateContext.messageId &&
+    !state.messageId
+  ) {
+    next.confirmedFacts = {
+      message: null,
+      deliveries: [],
+      connection: null,
+      deliveryQuery: null,
+    };
+    next.evidence = [];
+    next.missingInformation = [];
+    next.unsupportedCapabilities = [];
+    next.conflicts = [];
+    next.calledTools = [];
+    next.toolErrors = [];
+    next.diagnosisResultId = null;
+    next.diagnosisResult = null;
+    next.pendingQuestion = null;
+    next.status = "extracting_context";
+  }
+
   if (
     patch.messageId &&
     state.messageId &&

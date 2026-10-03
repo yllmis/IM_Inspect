@@ -299,6 +299,7 @@ async function runScenario(
       traceStore,
       now: () => new Date(timestamp),
       maxSteps,
+      allowAutomaticMessageLookup: scenario.allowed_tools.length > 0,
     });
     const state = await stateStore.load({
       sessionId: `session_${runId}`,

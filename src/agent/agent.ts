@@ -88,6 +88,8 @@ export interface AgentInput {
   maxSteps?: number;
   sessionTtlMs?: number;
   now?: () => Date;
+  /** Eval 场景可关闭自动首查，以便验证“信息不足时只追问”的边界。 */
+  allowAutomaticMessageLookup?: boolean;
 }
 
 export interface AgentToolCall {
@@ -271,7 +273,15 @@ async function runAgentLoop(
   let diagnosis = refreshDiagnosis(state, input);
   state = diagnosis.state;
 
-  if (state.pendingQuestion) {
+  const hasCandidateTarget = Boolean(
+    state.candidateContext.messageId ||
+    state.candidateContext.userId ||
+    state.candidateContext.conversationId,
+  );
+  if (
+    state.pendingQuestion &&
+    (state.pendingTargetSwitch || !hasCandidateTarget)
+  ) {
     state = withStatus(state, "awaiting_information");
     const reply = state.pendingQuestion!.question;
     state = recordConversationExchange(state, {
@@ -423,6 +433,20 @@ async function runAgentLoop(
     stepCount: selection.steps.length,
   });
 
+  // CandidateContext 已明确给出 messageId，但模型可能只返回追问文本而没有
+  // 选择工具。此时强制执行一次只读状态查询，避免把“有候选对象”错误地回复成
+  // “请重新提供 messageId”；候选值仍要经过 Connector 才能成为事实。
+  if (
+    input.allowAutomaticMessageLookup !== false &&
+    calls.length === 0 &&
+    !state.messageId &&
+    state.candidateContext.messageId
+  ) {
+    await execute("get_message_status", {
+      messageId: state.candidateContext.messageId,
+    });
+  }
+
   diagnosis = refreshDiagnosis(state, input);
   state = diagnosis.state;
   const stop = evaluateStopRules({
@@ -439,6 +463,7 @@ async function runAgentLoop(
   });
 
   const responseContext = buildModelContext(state, "generate_response", {
+    currentUserText: input.text,
     budget: contextBudget,
   });
   let modelText = "";
