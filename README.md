@@ -12,7 +12,7 @@
 | ------------------------------ | ---------------------------------------------------------------- |
 | 项目目标、用户和第一版边界     | [项目说明](docs/project-brief.md)                                |
 | MVP 分层架构                   | [MVP 架构图](docs/mvp-architecture.md)                           |
-| Agent 执行过程                 | [Agent 时序图](docs/agent-sequence.md)                           |
+| Agent 执行过程                 | [Agent 全链路图](docs/agent-sequence.md)                         |
 | 状态机与统一事实模型           | [诊断状态机与 Canonical Model](docs/diagnosis-state-machine.md)  |
 | 五个工具的输入、输出和安全边界 | [工具契约](docs/tool-contracts.md)                               |
 | 接入真实 IM 的推荐查询门面     | [OperationsQuery 接入参考](docs/operations-query-integration.md) |
@@ -57,7 +57,7 @@
 ## 架构图
 
 - [MVP 架构图](docs/mvp-architecture.md)
-- [Agent 时序图](docs/agent-sequence.md)
+- [Agent 全链路图](docs/agent-sequence.md)
 
 ## 真实 IM 接入路径
 
@@ -81,10 +81,10 @@ OperationsQuery 的价值是把 IM 内部的 RPC 语义、数据库字段和错�
 
 远程 OperationsQuery 推荐仅绑定服务器回环地址，开发时通过 SSH 隧道映射到本地端口；生产使用内网/VPN，或同时启用 TLS、IP 白名单和服务 Token。不能把明文 gRPC 查询入口直接开放到公网；确需公网联调时必须先完成 TLS 和网络白名单，具体约束见[本地部署与演示](docs/local-deployment.md#公网直连联调仅在完成传输层安全后使用)。Connector 默认每 15 秒刷新一次能力快照，避免一次隧道故障永久把能力标记为不支持。
 
-## Agent 时序图和工具契约
+## Agent 全链路图和工具契约
 
 - [MVP 架构图](docs/mvp-architecture.md)：Next.js、Agent Loop、Tool Registry、Connector、Canonical Model 和诊断引擎的边界。
-- [Agent 时序图](docs/agent-sequence.md)：上下文提取、工具调用、证据合并、确定性分类和人工确认顺序。
+- [Agent 全链路图](docs/agent-sequence.md)：上下文提取、工具调用、证据合并、确定性分类和人工确认边界。
 - [工具契约](docs/tool-contracts.md)：五个工具的 Schema、错误、超时、权限、重试和幂等策略。
 - [诊断状态机](docs/diagnosis-state-machine.md)：`received` 到 `completed/failed/stopped` 的状态转换。
 

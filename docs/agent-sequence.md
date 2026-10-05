@@ -1,82 +1,12 @@
-# IM Inspect Agent 时序图
+# IM Inspect Agent 全链路图
 
-> 该图展示一次“消息未收到”诊断请求的受控混合循环。模型负责提出下一步，代码负责校验、执行、聚合事实和最终分类。
+> 该图展示一次“消息未收到”诊断请求的受控混合循环。模型负责理解问题、追问和选择下一步，代码负责校验、执行、聚合事实和最终分类。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor CS as 客服
-    participant API as Next.js API
-    participant A as Agent Loop
-    participant S as StateStore
-    participant LLM as MiMo
-    participant R as Tool Registry
-    participant C as Connector
-    participant F as Fake/GoIM Connector
-    participant D as diagnose()
-    participant Repo as Draft Repository
+![IM Inspect 客服消息诊断全链路图](assets/im-inspect-agent-chain.png)
 
-    CS->>API: POST /api/chat {sessionId?, text}
-    API->>API: 创建 requestId/runId、权限、deadline、调用预算
-    API->>A: runAgent(sessionId, text, model, registry, stateStore, context)
-    A->>S: load 或 create AgentSessionState
-    S-->>A: working state + version
+图中主链路是：客服输入 → Agent 提取信息并选择工具 → 受控只读查询 → IM 适配接口 → Go IM `OperationsQuery` 查询服务 → 证据整理与确定性诊断 → 结果回复。缺少信息时回问客服；证据不足但仍有可用查询能力时回到工具选择继续取证；超过调用预算、工具失败或能力不支持时安全停止。
 
-    A->>LLM: 提取候选 messageId/userId/timeRange
-    LLM-->>A: 候选上下文（不是事实）
-    A->>A: Zod 校验候选上下文
-
-    alt 缺少定位信息
-        A-->>CS: 追问 messageId 或其他必要线索
-    else 信息足够
-        loop 受控工具循环（最多步数/调用数/截止时间）
-            A->>LLM: 提供当前上下文和已返回工具结果
-            LLM-->>A: 选择一个白名单工具及参数
-            A->>A: 相同工具和参数哈希去重
-            A->>R: execute(toolName, args, context)
-            R->>R: 白名单、权限、Schema、预算检查
-
-            alt 参数非法 / 无权限 / 未确认写操作
-                R-->>A: ToolError（不是诊断事实）
-                A->>D: 合并 toolErrors 后重新评估
-            else 只读工具
-                R->>C: 调用 Connector 方法
-                C->>F: 查询 Fixture 或受控 IM 接口
-                F-->>C: 原始结果或 Connector 错误
-                C-->>R: Canonical Model / ConnectorResult
-                R->>R: 超时、有限重试、脱敏、Trace
-                R-->>A: ToolResponse
-                A->>A: 聚合 MessageFact、DeliveryFact、ConnectionFact、Evidence
-                A->>D: diagnose(DiagnosisInput)
-            end
-
-            alt 已得到确定性分类
-                D-->>A: DiagnosisResult（最终分类）
-                A->>LLM: 解释已确认事实并生成客服话术
-                LLM-->>A: 回复文本（不能改分类）
-            else 证据不足且可继续查询
-                D-->>A: insufficient_data + missingInformation
-            else 证据冲突 / 能力不支持 / 达到硬上限
-                D-->>A: 停止原因和安全说明
-            end
-        end
-    end
-
-    opt 诊断建议升级且客服明确确认
-        A->>LLM: 生成升级单草稿文本
-        LLM-->>A: 草稿候选内容
-        A->>R: create_escalation_draft（带 confirmationToken）
-        R->>R: 校验权限、确认绑定、contentHash、幂等键
-        R->>Repo: 保存或复用草稿
-        Repo-->>R: draft / reused
-        R-->>A: 草稿结果
-    end
-
-    A->>S: save(state, expectedVersion)
-    S-->>A: 新 version 或 version_conflict
-    A-->>API: 结构化执行结果、DiagnosisResult、Trace
-    API-->>CS: 客服回复、事实、证据和必要的后续动作
-```
+`create_escalation_draft` 属于诊断完成后的升级旁路，不进入普通只读查询循环。它需要服务端校验、权限、人工确认和幂等控制；当前全链路图为了突出诊断主线没有展开该旁路。
 
 ## 关键控制点
 
