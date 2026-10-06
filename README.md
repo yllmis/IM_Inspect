@@ -6,6 +6,8 @@
 [![Tests](https://img.shields.io/badge/tests-304%20passed-2ea44f)](#验证结果)
 [![License](https://img.shields.io/badge/license-private-lightgrey)](#)
 
+![IM Inspect 客服消息诊断全链路图](assets/im-inspect-agent-chain.png)
+
 ## 文档导航
 
 | 主题                           | 入口                                                             |
