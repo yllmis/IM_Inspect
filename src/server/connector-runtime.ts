@@ -67,8 +67,17 @@ export async function createConnectorFromEnvironment(
           `GO_IM_${kind}_SERVICE_TOKEN is required in domain mode`,
         );
       const insecure = readBoolean(environment.GO_IM_INSECURE, false);
-      // 明文仅用于同机回环测试或受保护的本机隧道，公网必须 TLS。
-      if (insecure && !/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(address)) {
+      const allowInsecureRemote = readBoolean(
+        environment.GO_IM_ALLOW_INSECURE_REMOTE,
+        false,
+        "GO_IM_ALLOW_INSECURE_REMOTE",
+      );
+      // 远程明文默认拒绝；自用环境显式接受风险时可启用，仍必须携带服务凭证。
+      if (
+        insecure &&
+        !allowInsecureRemote &&
+        !/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(address)
+      ) {
         throw new ConnectorConfigurationError(
           "invalid_mode",
           "domain mode requires TLS for non-loopback endpoints",
@@ -121,12 +130,16 @@ function emptyToUndefined(value?: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function readBoolean(value: string | undefined, fallback: boolean): boolean {
+function readBoolean(
+  value: string | undefined,
+  fallback: boolean,
+  key = "GO_IM_INSECURE",
+): boolean {
   if (value === undefined || value.trim() === "") return fallback;
   if (value === "true") return true;
   if (value === "false") return false;
   throw new ConnectorConfigurationError(
     "invalid_mode",
-    "GO_IM_INSECURE must be true or false",
+    `${key} must be true or false`,
   );
 }

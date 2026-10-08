@@ -73,15 +73,17 @@ Agent Tool
   └─ operations.ObservationQuery：消息/投递/连接观测
 ```
 
-Connector 隔离具体 IM 的 RPC 协议；Agent 只依赖 `found=false`、`coverageStatus=partial` 等稳定语义。领域配置使用 `GO_IM_QUERY_CONTRACT=domain`，为 MESSAGE、USER、OBSERVATION 分别设置 `GO_IM_<领域>_GRPC_URL` 和 `GO_IM_<领域>_SERVICE_TOKEN`（见 `.env.example`）。公网必须 `GO_IM_INSECURE=false`，私有 CA 可通过 `GO_IM_TLS_CA_PATH` 配置。三类地址可以相同，由 TLS 网关按允许的契约路由。凭证仅留在服务端，不发送给模型或浏览器。
+Connector 隔离具体 IM 的 RPC 协议；Agent 只依赖 `found=false`、`coverageStatus=partial` 等稳定语义。领域配置使用 `GO_IM_QUERY_CONTRACT=domain`，为 MESSAGE、USER、OBSERVATION 分别设置 `GO_IM_<领域>_GRPC_URL` 和 `GO_IM_<领域>_SERVICE_TOKEN`（见 `.env.example`）。公网推荐使用 TLS（`GO_IM_INSECURE=false`），私有 CA 可通过 `GO_IM_TLS_CA_PATH` 配置。三类地址可以相同，由 TLS 网关按允许的契约路由；也可按下面的自用直连配置分别连接。凭证仅留在服务端，不发送给模型或浏览器。
 
-本机临时加密联调可将明文端点转发到回环地址，并在 Git 忽略的 `.env.go-im-domain.local` 中保存测试配置。运行：
+也可不使用网关，直接配置三个服务的地址。推荐仍使用 TLS；若自用环境选择远程明文，必须同时显式设置 `GO_IM_INSECURE=true` 和 `GO_IM_ALLOW_INSECURE_REMOTE=true`。后者默认关闭，不免除服务令牌鉴权，也不表示公网传输安全。不要将这种配置作为生产安全基线。
+
+真实联调配置可保存在 Git 忽略的 `.env.go-im-domain.local`；本机回环或临时加密隧道也可用于联调。运行：
 
 ```sh
 node --env-file-if-exists=.env.local --env-file=.env.go-im-domain.local node_modules/vitest/vitest.mjs run src/connectors/go-im/domain-connector.integration.test.ts
 ```
 
-该测试只读，不创建用户或消息。存在消息/用户的用例需显式提供隔离测试 ID；未配置的用例会跳过。没有配置新领域地址的已有运行环境暂时保持 legacy；出现部分新配置不会静默回退。公网入口切换和旧契约删除仍是后续上线步骤。
+该测试只读，不创建用户或消息。存在消息/用户的用例需显式提供隔离测试 ID；未配置的用例会跳过。没有配置新领域地址的已有运行环境暂时保持 legacy；出现部分新配置不会静默回退。先验证 Connector 已按新契约调用，再停用并删除旧兼容接口。
 
 历史单入口的接入顺序（仅迁移期 legacy）：
 
