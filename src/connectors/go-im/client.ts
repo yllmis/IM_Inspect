@@ -72,9 +72,6 @@ export interface GoIMQueryClient {
   ): Promise<unknown>;
 }
 
-/** 迁移期类型别名，不代表新 Connector 继续调用旧服务。 */
-export type OperationsQueryClient = GoIMQueryClient;
-
 export interface QueryGrpcClientOptions {
   address: string;
   serviceToken?: string;
@@ -84,13 +81,8 @@ export interface QueryGrpcClientOptions {
   rootCertificatePath?: string;
 }
 
-export type OperationsQueryGrpcClientOptions = QueryGrpcClientOptions;
-
 export type QueryContract =
-  | "operations.OperationsQuery"
-  | "operations.ObservationQuery"
-  | "im.MessageQuery"
-  | "user.UserQuery";
+  "operations.ObservationQuery" | "im.MessageQuery" | "user.UserQuery";
 
 type UnaryClient = {
   [method: string]: (
@@ -265,7 +257,7 @@ export class QueryGrpcClient implements GoIMQueryClient {
       if (!fn) {
         reject(
           Object.assign(
-            new Error(`OperationsQuery method ${method} is unavailable`),
+            new Error(`Go IM query method ${method} is unavailable`),
             { code: 12 },
           ),
         );
@@ -282,12 +274,5 @@ export class QueryGrpcClient implements GoIMQueryClient {
         },
       );
     });
-  }
-}
-
-/** 旧入口仅用于显式 legacy 配置和兼容测试。 */
-export class OperationsQueryGrpcClient extends QueryGrpcClient {
-  constructor(options: OperationsQueryGrpcClientOptions) {
-    super(options, "operations.OperationsQuery");
   }
 }

@@ -22,11 +22,7 @@ import { MessageFact, MessageFactSchema } from "../../domain/message";
 import { ConnectorCapabilitiesSchema, ToolError } from "../../domain/errors";
 import { ConnectorCapabilities } from "../../domain/errors";
 import { ConnectorRequestContext } from "../../tools/context";
-import {
-  GoIMQueryClient,
-  OperationsQueryGrpcClient,
-  OperationsQueryGrpcClientOptions,
-} from "./client";
+import type { GoIMQueryClient } from "./client";
 import {
   DomainQueryGrpcClient,
   type DomainQueryClientOptions,
@@ -51,17 +47,6 @@ import {
 } from "./schemas";
 
 const SOURCE = "go-im-query";
-const UNKNOWN_CAPABILITIES: ConnectorCapabilities = {
-  // 隧道/网络/权限导致 GetCapabilities 失败时只能标记 unknown。
-  // 标记 unsupported 会被 Tool 层提前拦截，掩盖真正的 dependency_unavailable。
-  messageLookup: "unknown",
-  messageSearch: "unknown",
-  deliveryEvents: "unknown",
-  historicalPresence: "unknown",
-  ackTracking: "unknown",
-  writeFailureEvents: "unknown",
-};
-
 export interface GoIMConnectorOptions {
   client: GoIMQueryClient;
   capabilities: ConnectorCapabilities;
@@ -118,7 +103,7 @@ export class GoIMConnector implements Connector {
     ) {
       return this.failure(
         "unsupported_capability",
-        "OperationsQuery does not expose conversation lookup",
+        "Go IM query does not expose conversation lookup",
         false,
         { capability: "conversationLookup" },
       );
@@ -469,17 +454,7 @@ export class GoIMConnector implements Connector {
   }
 }
 
-/** 启动时读取一次能力，之后每个请求复用快照，避免模型运行中能力漂移。 */
-export async function createGoIMConnector(
-  options: OperationsQueryGrpcClientOptions & {
-    bootstrapContext: ConnectorRequestContext;
-  },
-): Promise<GoIMConnector> {
-  const client = new OperationsQueryGrpcClient(options);
-  return bootstrapConnector(client, options.bootstrapContext);
-}
-
-/** 新部署使用领域契约；旧工厂仅保留供迁移期测试和旧配置使用。 */
+/** 启动时组合领域与观测能力，之后按现有刷新机制更新。 */
 export async function createDomainGoIMConnector(
   options: DomainQueryClientOptions & {
     bootstrapContext: ConnectorRequestContext;
@@ -494,25 +469,6 @@ export async function createDomainGoIMConnector(
     capabilities: mapCapabilities(raw),
     capabilityFailures: client.capabilityFailures,
   });
-}
-
-async function bootstrapConnector(
-  client: GoIMQueryClient,
-  bootstrapContext: ConnectorRequestContext,
-): Promise<GoIMConnector> {
-  try {
-    const raw = RawCapabilitiesSchema.parse(
-      await client.getCapabilities(bootstrapContext, Date.now() + 3_000),
-    );
-    return new GoIMConnector({ client, capabilities: mapCapabilities(raw) });
-  } catch (error) {
-    // 能力读取失败时保留真实依赖错误；不能把权限/网络故障伪装成能力不支持。
-    return new GoIMConnector({
-      client,
-      capabilities: UNKNOWN_CAPABILITIES,
-      bootstrapFailure: mapGrpcError(error),
-    });
-  }
 }
 
 function toUnixNano(value: string): string {

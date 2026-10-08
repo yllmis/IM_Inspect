@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectorRequestContext } from "../../tools/context";
-import { OperationsQueryClient } from "./client";
+import { GoIMQueryClient } from "./client";
 import { GoIMConnector } from "./go-im-connector";
 
 const context: ConnectorRequestContext = {
@@ -22,8 +22,8 @@ const capabilities = {
 };
 
 function client(
-  overrides: Partial<OperationsQueryClient> = {},
-): OperationsQueryClient {
+  overrides: Partial<GoIMQueryClient> = {},
+): GoIMQueryClient {
   return {
     searchMessages: vi.fn(async () => ({
       messages: [],
@@ -138,7 +138,7 @@ describe("GoIMConnector", () => {
     });
   });
 
-  it("将 OperationsQuery 的已存在消息映射为 Canonical MessageFact", async () => {
+  it("将 Go IM query 的已存在消息映射为 Canonical MessageFact", async () => {
     const connector = new GoIMConnector({ client: client(), capabilities });
     const result = await connector.getMessageStatus(
       { messageId: "msg_001" },
@@ -274,7 +274,7 @@ describe("GoIMConnector", () => {
     expect(getDeliveryTimeline).not.toHaveBeenCalled();
   });
 
-  it("使用 OperationsQuery 的当前连接观测生成 ConnectionFact", async () => {
+  it("使用 Go IM query 的当前连接观测生成 ConnectionFact", async () => {
     const connector = new GoIMConnector({ client: client(), capabilities });
     const result = await connector.getConnectionStatus(
       { userId: "user_receiver", at: "2025-10-09T08:53:20.000Z" },
@@ -444,7 +444,7 @@ describe("GoIMConnector", () => {
       capabilities: { ...capabilities, messageLookup: "unsupported" },
       bootstrapFailure: {
         code: "permission_denied",
-        message: "OperationsQuery permission denied",
+        message: "Go IM query permission denied",
         retryable: false,
       },
     });
@@ -468,7 +468,7 @@ describe("GoIMConnector", () => {
       },
       bootstrapFailure: {
         code: "dependency_unavailable",
-        message: "OperationsQuery unavailable",
+        message: "Go IM query unavailable",
         retryable: true,
       },
     });

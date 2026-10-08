@@ -133,7 +133,7 @@ export const DeliveryEventsPageSchema = z
     events: z.array(DeliveryFactSchema).max(50),
     complete: z.boolean(),
     truncated: z.boolean(),
-    // coverageStatus/eventsDropped 来自 OperationsQuery，用来区分“确实没有事件”和“观测不完整”。
+    // coverageStatus/eventsDropped 来自 Go IM query，用来区分“确实没有事件”和“观测不完整”。
     // Fake Connector 仍可省略这两个字段；Tool 层会按旧契约补默认值。
     coverageStatus: z.enum(["complete", "partial", "unknown"]).optional(),
     eventsDropped: z.number().int().nonnegative().optional(),

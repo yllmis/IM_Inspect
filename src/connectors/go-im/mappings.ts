@@ -64,7 +64,7 @@ export function mapMessageRecord(
 ): MessageFact | null {
   if (!raw.found) return null;
   if (!raw.messageId || raw.messageId !== requestedMessageId) {
-    throw new Error("OperationsQuery returned a different messageId");
+    throw new Error("Go IM query returned a different messageId");
   }
   const observedAt = requiredObservedAt(raw.observedAt, "message record");
   const createdAt = unixNanoToIso(raw.createdAt);
@@ -197,7 +197,7 @@ export function mapDeliveryEvent(
 ): DeliveryFact {
   if (!raw.messageId || raw.messageId !== requestedMessageId) {
     throw new Error(
-      "OperationsQuery returned a delivery event for another messageId",
+      "Go IM query returned a delivery event for another messageId",
     );
   }
   const attemptedAt = requiredObservedAt(raw.occurredAt, "delivery event");
@@ -245,7 +245,7 @@ export function mapDeliveryTimeline(
 } {
   if (raw.messageId && raw.messageId !== requestedMessageId) {
     throw new Error(
-      "OperationsQuery returned a timeline for another messageId",
+      "Go IM query returned a timeline for another messageId",
     );
   }
   return {
@@ -359,12 +359,12 @@ export function mapCapabilities(raw: RawCapabilities): ConnectorCapabilities {
 export function mapGrpcError(error: unknown): ToolError {
   const grpcError = error as { code?: number; message?: string };
   const code = grpcError.code;
-  const message = grpcError.message || "OperationsQuery request failed";
+  const message = grpcError.message || "Go IM query request failed";
   switch (code) {
     case grpcStatus.DEADLINE_EXCEEDED:
       return {
         code: "timeout",
-        message: "OperationsQuery request timed out",
+        message: "Go IM query request timed out",
         retryable: true,
       };
     case grpcStatus.UNAVAILABLE:
@@ -377,7 +377,7 @@ export function mapGrpcError(error: unknown): ToolError {
     case grpcStatus.UNAUTHENTICATED:
       return {
         code: "permission_denied",
-        message: "OperationsQuery permission denied",
+        message: "Go IM query permission denied",
         retryable: false,
       };
     case grpcStatus.NOT_FOUND:

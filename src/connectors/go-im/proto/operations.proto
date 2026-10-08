@@ -10,48 +10,6 @@ service ObservationQuery {
   rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
 }
 
-service OperationsQuery {
-  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
-  rpc FindUserReference(FindUserReferenceRequest) returns (FindUserReferenceResponse);
-  rpc GetMessageRecord(GetMessageRecordRequest) returns (GetMessageRecordResponse);
-  rpc GetMessageTimeline(GetMessageTimelineRequest) returns (GetMessageTimelineResponse);
-  rpc GetDeliveryTimeline(GetDeliveryTimelineRequest) returns (GetDeliveryTimelineResponse);
-  rpc GetConnectionObservations(GetConnectionObservationsRequest) returns (GetConnectionObservationsResponse);
-  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
-}
-
-message SearchMessagesRequest {
-  string senderId = 1;
-  string receiverId = 2;
-  int64 startTime = 3;
-  int64 endTime = 4;
-  int32 limit = 5;
-}
-message MessageReference {
-  string messageId = 1;
-  string conversationId = 2;
-  string senderId = 3;
-  string receiverId = 4;
-  int64 createdAt = 5;
-}
-message SearchMessagesResponse {
-  repeated MessageReference messages = 1;
-  bool truncated = 2;
-  int64 observedAt = 3;
-}
-
-message FindUserReferenceRequest { string userId = 1; string nickname = 2; string phone = 3; int32 limit = 4; }
-message UserReference { string userId = 1; string displayName = 2; int32 status = 3; int64 observedAt = 4; }
-message FindUserReferenceResponse { repeated UserReference users = 1; bool truncated = 2; }
-
-message GetMessageRecordRequest { string messageId = 1; }
-message GetMessageRecordResponse {
-  bool found = 1; string messageId = 2; string conversationId = 3; string senderId = 4;
-  string receiverId = 5; int64 createdAt = 6; string source = 7; int64 observedAt = 8;
-  int32 chatType = 9; int32 msgType = 10; string readState = 11; string readStateNote = 12;
-  bool eventsAvailable = 13; string note = 14; string eventsState = 15;
-}
-
 message GetMessageTimelineRequest { string messageId = 1; int64 startTime = 2; int64 endTime = 3; int32 limit = 4; string cursor = 5; }
 message MessageEvent {
   string eventId = 1; int32 eventVersion = 2; string eventType = 3; string messageId = 4;

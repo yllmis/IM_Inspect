@@ -3,7 +3,7 @@
 面向客服的 IM 消息异常诊断 Agent。项目当前按小步垂直切片开发。
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-304%20passed-2ea44f)](#验证结果)
+[![Tests](https://img.shields.io/badge/tests-330%20passed-2ea44f)](#验证结果)
 [![License](https://img.shields.io/badge/license-private-lightgrey)](#)
 
 ![IM Inspect 客服消息诊断全链路图](docs/assets/im-inspect-agent-chain.png)
@@ -25,7 +25,7 @@
 | 本地启动、Connector 切换与演示 | [本地部署与演示](docs/local-deployment.md)                       |
 | 本地真实模型与数据库验证记录   | [2026-10-02 验证结果](docs/local-verification-2026-10-02.md)     |
 
-> Agent 和 Tools 只依赖统一 Connector，不依赖特定 IM 数据库或 Go 代码。GoIMConnector 将 IM 的领域查询和内部观测映射为事实模型；旧 OperationsQuery 只保留为迁移期兼容入口。
+> Agent 和 Tools 只依赖统一 Connector，不依赖特定 IM 数据库或 Go 代码。GoIMConnector 将 IM 的领域查询和内部观测映射为事实模型；旧 OperationsQuery 已下线，不再提供 legacy 回退。
 
 ## 项目背景与核心工作流
 
@@ -47,7 +47,7 @@
 
 - 设计基线：项目说明、诊断状态机、工具契约、Go IM 数据契约和 Eval 场景。
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
-- Connector：正式 Connector 接口、Fake Connector 和 `GoIMConnector`。领域模式分别调用 `im.MessageQuery`、`user.UserQuery`、`operations.ObservationQuery`；显式 legacy 模式仍可使用旧入口。不直连 MongoDB、Redis 或 Kafka。
+- Connector：正式 Connector 接口、Fake Connector 和 `GoIMConnector`。分别调用 `im.MessageQuery`、`user.UserQuery`、`operations.ObservationQuery`；显式 legacy 配置会拒绝启动。不直连 MongoDB、Redis 或 Kafka。
 - Go IM 接入：领域分流、最小 proto 契约、原始响应 Zod 校验、UnixNano 时间转换、状态/错误/能力映射和 messageId 关联校验。
 - Agent Loop：已接入结构化上下文提取、4 个只读诊断工具、逐次事实合并、确定性诊断、受控回复和重复调用停止规则；升级草稿写操作不进入普通诊断循环。
 - 多轮状态：保留内存 `StateStore` 用于单元测试，API 已接入 `MySqlStateStore`；使用相同 `sessionId` 继续诊断，并通过 `version` 乐观锁阻止并发覆盖。
@@ -83,16 +83,17 @@ Connector 隔离具体 IM 的 RPC 协议；Agent 只依赖 `found=false`、`cove
 node --env-file-if-exists=.env.local --env-file=.env.go-im-domain.local node_modules/vitest/vitest.mjs run src/connectors/go-im/domain-connector.integration.test.ts
 ```
 
-该测试只读，不创建用户或消息。存在消息/用户的用例需显式提供隔离测试 ID；未配置的用例会跳过。没有配置新领域地址的已有运行环境暂时保持 legacy；出现部分新配置不会静默回退。先验证 Connector 已按新契约调用，再停用并删除旧兼容接口。
+该测试只读，不创建用户或消息。存在消息/用户的用例需显式提供隔离测试 ID；未配置的用例会跳过。旧七个 RPC 路径必须返回 `UNIMPLEMENTED`，仅配置旧地址不会回退到旧协议。
 
-历史单入口的接入顺序（仅迁移期 legacy）：
+完整边界联调使用 IM-Grpc 的 `apps/im/rpc/queryfixture`、`apps/user/rpc/queryfixture` 和 `deploy/script/query-contract-fixtures.py`：它们创建独立 `query_contract_test_*` 数据库，只启动查询测试进程，不注册业务服务、不写正常聊天库。安全复制脚本产生的 `fixture.env` 为 Git 忽略的 `.env.go-im-fixture.local`，按脚本说明转发仅回环监听的测试端口后执行：
 
-1. 先实现 `GetCapabilities` 和 `GetMessageRecord`，验证鉴权、超时和 `found=false` 语义。
-2. 再按实际可观测性接入投递时间线和连接观测；没有记录的能力必须返回 `unsupported`，不能用空数组伪造。
-3. 设置 `IM_INSPECT_CONNECTOR=go-im`，并配置 `GO_IM_OPERATIONS_GRPC_URL` 和服务端 Token；Route 会通过 Connector 工厂选择 `GoIMConnector`。
-4. 先运行 Connector 单测和固定 Eval，再进行隔离环境的端到端联调。
+```sh
+node --env-file=.env.go-im-fixture.local node_modules/vitest/vitest.mjs run src/connectors/go-im/domain-connector.integration.test.ts
+```
 
-远程 OperationsQuery 推荐仅绑定服务器回环地址，开发时通过 SSH 隧道映射到本地端口；生产使用内网/VPN，或同时启用 TLS、IP 白名单和服务 Token。不能把明文 gRPC 查询入口直接开放到公网；确需公网联调时必须先完成 TLS 和网络白名单，具体约束见[本地部署与演示](docs/local-deployment.md#公网直连联调仅在完成传输层安全后使用)。Connector 默认每 15 秒刷新一次能力快照，避免一次隧道故障永久把能力标记为不支持。
+夹具配置提供 `GO_IM_TEST_FIXTURE_SET=query-contract-v1`、真实消息和用户 ID。验证闭区间、稳定排序、恰好 limit、limit+1 截断、昵称字面匹配及脱敏；测试后用初始化脚本的 `--stop` 停止测试进程，独立数据保留供复查。正式 Agent 配置不切换为夹具。观测故障探测使用 `GO_IM_FAULT_GRPC_URL` 与 `GO_IM_OBSERVATION_SERVICE_TOKEN`，运行 `npm run test:go-im:fault`；这是合成故障测试，不是生产事故证据。
+
+Connector 默认每 15 秒刷新一次能力快照，避免短暂故障永久影响能力状态。
 
 ## Agent 全链路图和工具契约
 
@@ -115,7 +116,8 @@ node --env-file-if-exists=.env.local --env-file=.env.go-im-domain.local node_mod
 | 危险操作拦截     |      41/41 | 10 项确定性安全检查                        |
 | 普通 Runner 通过 |      34/41 | 7 个升级场景由专用 Runner 负责             |
 | 专用升级 Runner  |        7/7 | prepare、confirm、过期、内容变化、幂等冲突 |
-| 单元测试         | 304 passed | 11 个外部集成测试因环境或测试 ID 跳过      |
+| 单元测试         | 330 passed | 不含外部数据库及真实领域联调              |
+| 真实隔离契约联调 |      13/13 | MongoDB/MySQL 查询、边界、鉴权和旧接口下线 |
 
 普通 Runner 的 7 个升级场景失败已记录为 `eval_harness_gap`，没有修改 Gold Label 或 Fixture 来刷高通过率。详细结果见 [Eval Runner](docs/eval-runner.md)、[失败案例分析](docs/failure-analysis.md) 和 [验证记录](docs/local-verification-2026-10-02.md)。
 

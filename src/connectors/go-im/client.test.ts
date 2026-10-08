@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { ConnectorRequestContext } from "../../tools/context";
-import { OperationsQueryGrpcClient } from "./client";
+import { QueryGrpcClient } from "./client";
 import { GoIMConnector } from "./go-im-connector";
 
 const context: ConnectorRequestContext = {
@@ -27,22 +27,22 @@ const observedAt = "1760000000000000001";
  * Transport Test（传输测试）使用本机随机空闲端口和合成响应。
  * 验证真实 protobuf 编解码、metadata 和 deadline，不代表真实 IM 数据联调。
  */
-describe("OperationsQuery gRPC transport", () => {
+describe("MessageQuery gRPC transport", () => {
   const server = new Server();
-  let client: OperationsQueryGrpcClient;
+  let client: QueryGrpcClient;
   let receivedMetadata: Record<string, unknown>;
 
   beforeAll(async () => {
     const loaded = loadPackageDefinition(
-      loadSync(resolve("src/connectors/go-im/proto/operations.proto"), {
+      loadSync(resolve("src/connectors/go-im/proto/message_query.proto"), {
         longs: String,
         defaults: true,
         keepCase: false,
       }),
     ) as unknown as {
-      operations: { OperationsQuery: { service: ServiceDefinition } };
+      im: { MessageQuery: { service: ServiceDefinition } };
     };
-    server.addService(loaded.operations.OperationsQuery.service, {
+    server.addService(loaded.im.MessageQuery.service, {
       searchMessages(
         call: ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>,
         callback: sendUnaryData<Record<string, unknown>>,
@@ -84,10 +84,14 @@ describe("OperationsQuery gRPC transport", () => {
         (error, port) => (error ? reject(error) : resolvePort(port)),
       );
     });
-    client = new OperationsQueryGrpcClient({
-      address: `127.0.0.1:${port}`,
-      serviceToken: "synthetic-test-token",
-    });
+    client = new QueryGrpcClient(
+      {
+        address: `127.0.0.1:${port}`,
+        serviceToken: "synthetic-test-token",
+        protoPath: resolve("src/connectors/go-im/proto/message_query.proto"),
+      },
+      "im.MessageQuery",
+    );
   });
 
   afterAll(() => {
@@ -110,7 +114,7 @@ describe("OperationsQuery gRPC transport", () => {
     });
   }
 
-  it("通过默认 proto 路径加载服务，保持 int64 精度并传递服务端身份和追踪字段", async () => {
+  it("通过消息 proto 路径加载服务，保持 int64 精度并传递服务端身份和追踪字段", async () => {
     const raw = await client.getMessageRecord(
       { messageId: "msg_transport" },
       context,

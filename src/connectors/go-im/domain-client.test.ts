@@ -25,6 +25,33 @@ type Reply = sendUnaryData<Record<string, unknown>>;
 
 /** 真实 gRPC 序列化和分流测试：服务端不注册旧契约，避免误走兼容层也能通过。 */
 describe("领域查询 Connector", () => {
+  it("观测 proto 只保留四个正式方法，不包含旧服务或业务消息类型", () => {
+    const loaded = loadPackageDefinition(
+      loadSync(resolve("src/connectors/go-im/proto/operations.proto")),
+    ) as unknown as {
+      operations: Record<string, { service?: ServiceDefinition }>;
+    };
+    expect(loaded.operations.OperationsQuery).toBeUndefined();
+    for (const name of [
+      "GetMessageRecordRequest",
+      "SearchMessagesRequest",
+      "FindUserReferenceRequest",
+    ])
+      expect(loaded.operations[name]).toBeUndefined();
+    expect(
+      Object.values(loaded.operations.ObservationQuery.service!)
+        .map((method) => method.path)
+        .sort(),
+    ).toEqual(
+      [
+        "GetCapabilities",
+        "GetConnectionObservations",
+        "GetDeliveryTimeline",
+        "GetMessageTimeline",
+      ].map((name) => `/operations.ObservationQuery/${name}`),
+    );
+  });
+
   const servers: Server[] = [];
   let client: DomainQueryGrpcClient;
   let options: ConstructorParameters<typeof DomainQueryGrpcClient>[0];

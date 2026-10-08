@@ -4,7 +4,6 @@ import { createDomainGoIMConnector } from "../connectors/go-im/go-im-connector";
 // 工厂路由测试不发网络请求，真实 gRPC 和鉴权由独立联调测试验证。
 vi.mock("../connectors/go-im/go-im-connector", () => ({
   createDomainGoIMConnector: vi.fn(async () => ({ synthetic: true })),
-  createGoIMConnector: vi.fn(async () => ({ synthetic: true })),
 }));
 
 import { FakeConnector } from "../connectors/fake/fake-connector";
@@ -53,6 +52,15 @@ describe("Connector runtime", () => {
         GO_IM_OPERATIONS_GRPC_URL: "127.0.0.1:9100",
       }),
     ).rejects.toMatchObject({ code: "go_im_address_missing" });
+  });
+
+  it("旧契约已下线，拒绝显式 legacy 配置", async () => {
+    await expect(
+      createConnectorFromEnvironment({
+        IM_INSPECT_CONNECTOR: "go-im",
+        GO_IM_QUERY_CONTRACT: "legacy",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_mode" });
   });
 
   it("公网领域查询拒绝明文传输服务凭证", async () => {
