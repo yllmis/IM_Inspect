@@ -2,6 +2,14 @@ syntax = "proto3";
 
 package operations;
 
+// 正式内部观测契约。业务记录查询属于 MessageQuery / UserQuery。
+service ObservationQuery {
+  rpc GetMessageTimeline(GetMessageTimelineRequest) returns (GetMessageTimelineResponse);
+  rpc GetDeliveryTimeline(GetDeliveryTimelineRequest) returns (GetDeliveryTimelineResponse);
+  rpc GetConnectionObservations(GetConnectionObservationsRequest) returns (GetConnectionObservationsResponse);
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+}
+
 service OperationsQuery {
   rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
   rpc FindUserReference(FindUserReferenceRequest) returns (FindUserReferenceResponse);
@@ -34,14 +42,14 @@ message SearchMessagesResponse {
 
 message FindUserReferenceRequest { string userId = 1; string nickname = 2; string phone = 3; int32 limit = 4; }
 message UserReference { string userId = 1; string displayName = 2; int32 status = 3; int64 observedAt = 4; }
-message FindUserReferenceResponse { repeated UserReference users = 1; }
+message FindUserReferenceResponse { repeated UserReference users = 1; bool truncated = 2; }
 
 message GetMessageRecordRequest { string messageId = 1; }
 message GetMessageRecordResponse {
   bool found = 1; string messageId = 2; string conversationId = 3; string senderId = 4;
   string receiverId = 5; int64 createdAt = 6; string source = 7; int64 observedAt = 8;
   int32 chatType = 9; int32 msgType = 10; string readState = 11; string readStateNote = 12;
-  bool eventsAvailable = 13; string note = 14;
+  bool eventsAvailable = 13; string note = 14; string eventsState = 15;
 }
 
 message GetMessageTimelineRequest { string messageId = 1; int64 startTime = 2; int64 endTime = 3; int32 limit = 4; string cursor = 5; }

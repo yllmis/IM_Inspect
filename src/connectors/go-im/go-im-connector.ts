@@ -23,10 +23,14 @@ import { ConnectorCapabilitiesSchema, ToolError } from "../../domain/errors";
 import { ConnectorCapabilities } from "../../domain/errors";
 import { ConnectorRequestContext } from "../../tools/context";
 import {
-  OperationsQueryClient,
+  GoIMQueryClient,
   OperationsQueryGrpcClient,
   OperationsQueryGrpcClientOptions,
 } from "./client";
+import {
+  DomainQueryGrpcClient,
+  type DomainQueryClientOptions,
+} from "./domain-client";
 import {
   mapCapabilities,
   mapConnectionResponse,
@@ -46,7 +50,7 @@ import {
   RawSearchMessagesResponseSchema,
 } from "./schemas";
 
-const SOURCE = "go-im-operations-query";
+const SOURCE = "go-im-query";
 const UNKNOWN_CAPABILITIES: ConnectorCapabilities = {
   // 隧道/网络/权限导致 GetCapabilities 失败时只能标记 unknown。
   // 标记 unsupported 会被 Tool 层提前拦截，掩盖真正的 dependency_unavailable。
@@ -59,22 +63,24 @@ const UNKNOWN_CAPABILITIES: ConnectorCapabilities = {
 };
 
 export interface GoIMConnectorOptions {
-  client: OperationsQueryClient;
+  client: GoIMQueryClient;
   capabilities: ConnectorCapabilities;
   /** 能力初始化失败必须保留真实错误，不能伪装成“能力不支持”。 */
   bootstrapFailure?: ToolError;
+  capabilityFailures?: Readonly<Record<string, ToolError>>;
   now?: () => Date;
   timeoutMs?: number;
 }
 
 /**
- * GoIMConnector 是 IM 适配器：OperationsQuery 的协议字段在这里变成 Agent 的 Canonical Model。
+ * GoIMConnector 是 IM 适配器：领域/观测协议字段在这里变成 Agent 的 Canonical Model。
  * 它不连接数据库，也不调用 diagnose；诊断分类仍由确定性诊断引擎负责。
  */
 export class GoIMConnector implements Connector {
-  private readonly client: OperationsQueryClient;
+  private readonly client: GoIMQueryClient;
   private readonly capabilities: ConnectorCapabilities;
   private readonly bootstrapFailure?: ToolError;
+  private readonly capabilityFailures: Readonly<Record<string, ToolError>>;
   private readonly now: () => Date;
   private readonly timeoutMs: number;
 
@@ -82,12 +88,21 @@ export class GoIMConnector implements Connector {
     this.client = options.client;
     this.capabilities = ConnectorCapabilitiesSchema.parse(options.capabilities);
     this.bootstrapFailure = options.bootstrapFailure;
+    this.capabilityFailures = options.capabilityFailures ?? {};
     this.now = options.now ?? (() => new Date());
     this.timeoutMs = options.timeoutMs ?? 3_000;
   }
 
   getCapabilities(): ConnectorCapabilities {
     return { ...this.capabilities };
+  }
+
+  /** 关闭底层通道，不影响业务数据；用于测试和服务退出。 */
+  close(): void {
+    const client = this.client as GoIMQueryClient & {
+      close?: () => void;
+    };
+    client.close?.();
   }
 
   async findUserOrMessage(
@@ -208,11 +223,11 @@ export class GoIMConnector implements Connector {
           resolutionStatus:
             matches.length === 0
               ? "none"
-              : matches.length === 1
+              : matches.length === 1 && !raw.truncated
                 ? "unique"
                 : "multiple",
-          matches,
-          truncated: raw.users.length > parsed.limit,
+          matches: matches.slice(0, parsed.limit),
+          truncated: raw.truncated || raw.users.length > parsed.limit,
         }),
       );
     } catch (error) {
@@ -405,12 +420,14 @@ export class GoIMConnector implements Connector {
   private requireCapability(
     capability: string,
   ): ConnectorResult<never> | undefined {
-    if (this.bootstrapFailure) {
+    const probeFailure =
+      this.bootstrapFailure ?? this.capabilityFailures[capability];
+    if (probeFailure) {
       return this.failure(
-        this.bootstrapFailure.code,
-        this.bootstrapFailure.message,
-        this.bootstrapFailure.retryable,
-        this.bootstrapFailure.details,
+        probeFailure.code,
+        probeFailure.message,
+        probeFailure.retryable,
+        probeFailure.details,
       );
     }
     if (this.capabilities[capability] === "unsupported") {
@@ -459,12 +476,33 @@ export async function createGoIMConnector(
   },
 ): Promise<GoIMConnector> {
   const client = new OperationsQueryGrpcClient(options);
+  return bootstrapConnector(client, options.bootstrapContext);
+}
+
+/** 新部署使用领域契约；旧工厂仅保留供迁移期测试和旧配置使用。 */
+export async function createDomainGoIMConnector(
+  options: DomainQueryClientOptions & {
+    bootstrapContext: ConnectorRequestContext;
+  },
+): Promise<GoIMConnector> {
+  const client = new DomainQueryGrpcClient(options);
+  const raw = RawCapabilitiesSchema.parse(
+    await client.getCapabilities(options.bootstrapContext, Date.now() + 3000),
+  );
+  return new GoIMConnector({
+    client,
+    capabilities: mapCapabilities(raw),
+    capabilityFailures: client.capabilityFailures,
+  });
+}
+
+async function bootstrapConnector(
+  client: GoIMQueryClient,
+  bootstrapContext: ConnectorRequestContext,
+): Promise<GoIMConnector> {
   try {
     const raw = RawCapabilitiesSchema.parse(
-      await client.getCapabilities(
-        options.bootstrapContext,
-        Date.now() + 3_000,
-      ),
+      await client.getCapabilities(bootstrapContext, Date.now() + 3_000),
     );
     return new GoIMConnector({ client, capabilities: mapCapabilities(raw) });
   } catch (error) {

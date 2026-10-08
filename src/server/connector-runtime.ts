@@ -1,6 +1,9 @@
 import type { Connector } from "../connectors/connector";
 import { FakeConnector } from "../connectors/fake/fake-connector";
-import { createGoIMConnector } from "../connectors/go-im/go-im-connector";
+import {
+  createDomainGoIMConnector,
+  createGoIMConnector,
+} from "../connectors/go-im/go-im-connector";
 
 export type ConnectorMode = "fake" | "go-im";
 
@@ -26,6 +29,67 @@ export async function createConnectorFromEnvironment(
     return new FakeConnector(environment.FAKE_CONNECTOR_FIXTURE ?? "delivered");
   }
 
+  const bootstrapContext = {
+    tenantId: "tenant_demo",
+    actorId: "connector_bootstrap",
+    requestId: "connector_bootstrap",
+    runId: "connector_bootstrap",
+  };
+  // 已有旧配置保持可运行；只要出现任何新领域配置，就必须完整校验，不能静默回退。
+  const hasDomainConfiguration = Object.keys(environment).some(
+    (key) => /^GO_IM_(MESSAGE|USER|OBSERVATION)_/.test(key) && environment[key],
+  );
+  const contractMode =
+    environment.GO_IM_QUERY_CONTRACT?.trim() ||
+    (environment.GO_IM_OPERATIONS_GRPC_URL && !hasDomainConfiguration
+      ? "legacy"
+      : "domain");
+  if (contractMode !== "domain" && contractMode !== "legacy") {
+    throw new ConnectorConfigurationError(
+      "invalid_mode",
+      "GO_IM_QUERY_CONTRACT must be domain or legacy",
+    );
+  }
+  if (contractMode === "domain") {
+    const endpoint = (kind: "MESSAGE" | "USER" | "OBSERVATION") => {
+      const address = environment[`GO_IM_${kind}_GRPC_URL`]?.trim();
+      const serviceToken = emptyToUndefined(
+        environment[`GO_IM_${kind}_SERVICE_TOKEN`],
+      );
+      if (!address)
+        throw new ConnectorConfigurationError(
+          "go_im_address_missing",
+          `GO_IM_${kind}_GRPC_URL is required in domain mode`,
+        );
+      if (!serviceToken)
+        throw new ConnectorConfigurationError(
+          "invalid_mode",
+          `GO_IM_${kind}_SERVICE_TOKEN is required in domain mode`,
+        );
+      const insecure = readBoolean(environment.GO_IM_INSECURE, false);
+      // 明文仅用于同机回环测试或受保护的本机隧道，公网必须 TLS。
+      if (insecure && !/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(address)) {
+        throw new ConnectorConfigurationError(
+          "invalid_mode",
+          "domain mode requires TLS for non-loopback endpoints",
+        );
+      }
+      return {
+        address,
+        serviceToken,
+        insecure,
+        protoPath: emptyToUndefined(environment[`GO_IM_${kind}_PROTO_PATH`]),
+        rootCertificatePath: emptyToUndefined(environment.GO_IM_TLS_CA_PATH),
+      };
+    };
+    return createDomainGoIMConnector({
+      message: endpoint("MESSAGE"),
+      user: endpoint("USER"),
+      observation: endpoint("OBSERVATION"),
+      bootstrapContext,
+    });
+  }
+
   const address = environment.GO_IM_OPERATIONS_GRPC_URL?.trim();
   if (!address) {
     throw new ConnectorConfigurationError(
@@ -39,12 +103,7 @@ export async function createConnectorFromEnvironment(
     serviceToken: emptyToUndefined(environment.GO_IM_SERVICE_TOKEN),
     protoPath: emptyToUndefined(environment.GO_IM_OPERATIONS_PROTO_PATH),
     insecure: readBoolean(environment.GO_IM_INSECURE, true),
-    bootstrapContext: {
-      tenantId: "tenant_demo",
-      actorId: "connector_bootstrap",
-      requestId: "connector_bootstrap",
-      runId: "connector_bootstrap",
-    },
+    bootstrapContext,
   });
 }
 

@@ -1,0 +1,41 @@
+syntax = "proto3";
+package im;
+
+// 与 IM-Grpc 的 message_query.proto 同步；只包含受控只读契约，不复制持久层。
+service MessageQuery {
+  rpc GetMessageRecord(MessageRecordRequest) returns (MessageRecordResponse);
+  rpc SearchMessages(MessageSearchRequest) returns (MessageSearchResponse);
+}
+message MessageRecordRequest { string messageId = 1; }
+message MessageRecordResponse {
+  bool found = 1;
+  string messageId = 2;
+  string conversationId = 3;
+  string senderId = 4;
+  string receiverId = 5;
+  int64 createdAt = 6;
+  int32 chatType = 7;
+  int32 msgType = 8;
+  string readState = 9;
+  string readStateNote = 10;
+  int64 observedAt = 11;
+}
+message MessageSearchRequest {
+  string senderId = 1;
+  string receiverId = 2;
+  int64 startTime = 3;
+  int64 endTime = 4;
+  int32 limit = 5;
+}
+message MessageQueryReference {
+  string messageId = 1;
+  string conversationId = 2;
+  string senderId = 3;
+  string receiverId = 4;
+  int64 createdAt = 5;
+}
+message MessageSearchResponse {
+  repeated MessageQueryReference messages = 1;
+  bool truncated = 2;
+  int64 observedAt = 3;
+}

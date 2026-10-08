@@ -6,6 +6,7 @@ import {
 } from "@grpc/grpc-js";
 import { loadSync, PackageDefinition } from "@grpc/proto-loader";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
 import type { ConnectorRequestContext } from "../../tools/context";
 import {
@@ -18,7 +19,7 @@ import {
   RawSearchMessagesResponse,
 } from "./schemas";
 
-export interface OperationsQueryClient {
+export interface GoIMQueryClient {
   searchMessages(
     request: {
       senderId: string;
@@ -71,12 +72,25 @@ export interface OperationsQueryClient {
   ): Promise<unknown>;
 }
 
-export interface OperationsQueryGrpcClientOptions {
+/** 迁移期类型别名，不代表新 Connector 继续调用旧服务。 */
+export type OperationsQueryClient = GoIMQueryClient;
+
+export interface QueryGrpcClientOptions {
   address: string;
   serviceToken?: string;
   protoPath?: string;
   insecure?: boolean;
+  /** 私有 CA 只供服务端 gRPC 使用，不能暴露给浏览器。 */
+  rootCertificatePath?: string;
 }
+
+export type OperationsQueryGrpcClientOptions = QueryGrpcClientOptions;
+
+export type QueryContract =
+  | "operations.OperationsQuery"
+  | "operations.ObservationQuery"
+  | "im.MessageQuery"
+  | "user.UserQuery";
 
 type UnaryClient = {
   [method: string]: (
@@ -88,14 +102,14 @@ type UnaryClient = {
 } & { close(): void };
 
 /**
- * 传输层只负责 OperationsQuery gRPC，不负责 Canonical Model 或诊断分类。
+ * 传输层只负责指定只读契约的 gRPC，不负责 Canonical Model 或诊断分类。
  * 这样更换 Go IM 地址/认证方式时，不会把协议细节泄漏到工具和 Agent。
  */
-export class OperationsQueryGrpcClient implements OperationsQueryClient {
+export class QueryGrpcClient implements GoIMQueryClient {
   private readonly client: UnaryClient;
   private readonly serviceToken?: string;
 
-  constructor(options: OperationsQueryGrpcClientOptions) {
+  constructor(options: QueryGrpcClientOptions, contract: QueryContract) {
     const protoPath =
       // Next.js 打包后 __dirname 指向 .next，不能再用源码目录定位 proto。
       // 默认路径相对应用根目录；部署到其它目录时仍可显式指定 protoPath。
@@ -107,18 +121,21 @@ export class OperationsQueryGrpcClient implements OperationsQueryClient {
       defaults: true,
       keepCase: false,
     });
-    const loaded = loadPackageDefinition(definition) as unknown as {
-      operations?: {
-        OperationsQuery: new (address: string, creds: unknown) => UnaryClient;
-      };
-    };
-    const Service = loaded.operations?.OperationsQuery;
-    if (!Service)
-      throw new Error("OperationsQuery service is missing from proto");
+    const loaded = loadPackageDefinition(definition) as unknown as Record<
+      string,
+      Record<string, new (address: string, creds: unknown) => UnaryClient>
+    >;
+    const [namespace, service] = contract.split(".");
+    const Service = loaded[namespace]?.[service];
+    if (!Service) throw new Error(`${contract} service is missing from proto`);
     this.client = new Service(
       options.address,
       options.insecure === false
-        ? credentials.createSsl()
+        ? credentials.createSsl(
+            options.rootCertificatePath
+              ? readFileSync(options.rootCertificatePath)
+              : undefined,
+          )
         : credentials.createInsecure(),
     );
     this.serviceToken = options.serviceToken;
@@ -265,5 +282,12 @@ export class OperationsQueryGrpcClient implements OperationsQueryClient {
         },
       );
     });
+  }
+}
+
+/** 旧入口仅用于显式 legacy 配置和兼容测试。 */
+export class OperationsQueryGrpcClient extends QueryGrpcClient {
+  constructor(options: OperationsQueryGrpcClientOptions) {
+    super(options, "operations.OperationsQuery");
   }
 }

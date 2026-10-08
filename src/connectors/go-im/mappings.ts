@@ -91,7 +91,9 @@ export function mapMessageRecord(
     ],
     metadata: {
       readState: raw.readState,
-      eventsAvailable: String(raw.eventsAvailable),
+      eventsAvailable:
+        raw.eventsState === "unknown" ? "unknown" : String(raw.eventsAvailable),
+      eventsState: raw.eventsState,
     },
   };
 }
@@ -335,8 +337,12 @@ export function mapConnectionResponse(
       : null;
 }
 
-function capability(value: string): "supported" | "partial" | "unsupported" {
-  return value === "supported" || value === "partial" ? value : "unsupported";
+function capability(
+  value: string,
+): "supported" | "partial" | "unsupported" | "unknown" {
+  return value === "supported" || value === "partial" || value === "unknown"
+    ? value
+    : "unsupported";
 }
 
 export function mapCapabilities(raw: RawCapabilities): ConnectorCapabilities {

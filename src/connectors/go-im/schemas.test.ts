@@ -49,6 +49,16 @@ describe("Go IM 原始响应 Schema", () => {
     });
   });
 
+  it("旧 protobuf 没有事件状态时空字符串表示未知，非法状态仍拒绝", () => {
+    expect(
+      RawMessageRecordSchema.parse({ found: false, eventsState: "" })
+        .eventsState,
+    ).toBe("unknown");
+    expect(() =>
+      RawMessageRecordSchema.parse({ found: false, eventsState: "invalid" }),
+    ).toThrow();
+  });
+
   it("Schema 的 passthrough 不等于向 Agent 暴露敏感字段", () => {
     const parsed = RawMessageRecordSchema.parse({
       found: true,

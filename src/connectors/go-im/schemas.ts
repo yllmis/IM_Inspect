@@ -18,7 +18,10 @@ export const RawUserReferenceSchema = z
 export type RawUserReference = z.infer<typeof RawUserReferenceSchema>;
 
 export const RawFindUserReferenceResponseSchema = z
-  .object({ users: z.array(RawUserReferenceSchema).default([]) })
+  .object({
+    users: z.array(RawUserReferenceSchema).default([]),
+    truncated: z.boolean().optional().default(false),
+  })
   .passthrough();
 export type RawFindUserReferenceResponse = z.infer<
   typeof RawFindUserReferenceResponseSchema
@@ -61,6 +64,11 @@ export const RawMessageRecordSchema = z
     readState: z.string().optional().default("unknown"),
     readStateNote: z.string().optional().default(""),
     eventsAvailable: z.boolean().optional().default(false),
+    eventsState: z
+      .enum(["available", "absent", "unknown", ""])
+      .transform((value) => (value === "" ? "unknown" : value))
+      .optional()
+      .default("unknown"),
     note: z.string().optional().default(""),
   })
   .passthrough();

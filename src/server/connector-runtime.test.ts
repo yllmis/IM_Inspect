@@ -37,4 +37,38 @@ describe("Connector runtime", () => {
       ConnectorConfigurationError,
     );
   });
+
+  it("领域模式不回退到旧地址或 Fake", async () => {
+    await expect(
+      createConnectorFromEnvironment({
+        IM_INSPECT_CONNECTOR: "go-im",
+        GO_IM_QUERY_CONTRACT: "domain",
+        GO_IM_OPERATIONS_GRPC_URL: "127.0.0.1:9100",
+      }),
+    ).rejects.toMatchObject({ code: "go_im_address_missing" });
+  });
+
+  it("公网领域查询拒绝明文传输服务凭证", async () => {
+    await expect(
+      createConnectorFromEnvironment({
+        IM_INSPECT_CONNECTOR: "go-im",
+        GO_IM_MESSAGE_GRPC_URL: "example.com:9100",
+        GO_IM_MESSAGE_SERVICE_TOKEN: "test-only",
+        GO_IM_INSECURE: "true",
+      }),
+    ).rejects.toMatchObject({
+      name: "ConnectorConfigurationError",
+      code: "invalid_mode",
+    });
+  });
+
+  it("出现部分新配置时也必须校验，不能静默调用旧入口", async () => {
+    await expect(
+      createConnectorFromEnvironment({
+        IM_INSPECT_CONNECTOR: "go-im",
+        GO_IM_OPERATIONS_GRPC_URL: "127.0.0.1:9100",
+        GO_IM_USER_GRPC_URL: "127.0.0.1:19103",
+      }),
+    ).rejects.toMatchObject({ code: "go_im_address_missing" });
+  });
 });

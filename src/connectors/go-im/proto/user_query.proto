@@ -1,0 +1,22 @@
+syntax = "proto3";
+package user;
+
+service UserQuery {
+  rpc FindUserReference(UserReferenceRequest) returns (UserReferenceResponse);
+}
+message UserReferenceRequest {
+  string userId = 1;
+  string nickname = 2;
+  string phone = 3;
+  int32 limit = 4;
+}
+message UserQueryReference {
+  string userId = 1;
+  string displayName = 2;
+  int32 status = 3;
+  int64 observedAt = 4;
+}
+message UserReferenceResponse {
+  repeated UserQueryReference users = 1;
+  bool truncated = 2;
+}

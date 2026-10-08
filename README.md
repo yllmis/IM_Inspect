@@ -25,7 +25,7 @@
 | 本地启动、Connector 切换与演示 | [本地部署与演示](docs/local-deployment.md)                       |
 | 本地真实模型与数据库验证记录   | [2026-10-02 验证结果](docs/local-verification-2026-10-02.md)     |
 
-> OperationsQuery 是本项目推荐的 IM 侧只读诊断查询门面。它是一个可替换的接口契约，不是要求所有 IM 使用相同数据库、RPC 或表结构；接入方也可以提供语义等价的查询服务，再由 Connector 做映射。
+> Agent 和 Tools 只依赖统一 Connector，不依赖特定 IM 数据库或 Go 代码。GoIMConnector 将 IM 的领域查询和内部观测映射为事实模型；旧 OperationsQuery 只保留为迁移期兼容入口。
 
 ## 项目背景与核心工作流
 
@@ -47,8 +47,8 @@
 
 - 设计基线：项目说明、诊断状态机、工具契约、Go IM 数据契约和 Eval 场景。
 - 领域模型：Next.js/TypeScript 项目骨架、基于 Zod 的 Canonical Model Schema，以及不依赖 LLM 的确定性诊断引擎。
-- Connector：正式 Connector 接口、Fake Connector、6 个固定核心 Fixture，以及已实现的 `GoIMConnector`。GoIMConnector 只调用 IM-Grpc 的只读 `OperationsQuery`，不直连 MongoDB、Redis、Kafka 或旧 RPC。
-- OperationsQuery 接入：已提供 `OperationsQueryGrpcClient`、最小 proto 契约、原始响应 Zod 校验、UnixNano 时间转换、状态/错误/能力映射和 messageId 关联校验。
+- Connector：正式 Connector 接口、Fake Connector 和 `GoIMConnector`。领域模式分别调用 `im.MessageQuery`、`user.UserQuery`、`operations.ObservationQuery`；显式 legacy 模式仍可使用旧入口。不直连 MongoDB、Redis 或 Kafka。
+- Go IM 接入：领域分流、最小 proto 契约、原始响应 Zod 校验、UnixNano 时间转换、状态/错误/能力映射和 messageId 关联校验。
 - Agent Loop：已接入结构化上下文提取、4 个只读诊断工具、逐次事实合并、确定性诊断、受控回复和重复调用停止规则；升级草稿写操作不进入普通诊断循环。
 - 多轮状态：保留内存 `StateStore` 用于单元测试，API 已接入 `MySqlStateStore`；使用相同 `sessionId` 继续诊断，并通过 `version` 乐观锁阻止并发覆盖。
 - 工具结果边界：投递查询在 Connector 源头使用 `timeRange + limit`，显式返回完整性、截断和安全来源引用；Tool 层再执行字段白名单、脱敏、异常摘要和响应字节上限，模型只接收按用途裁剪的工作摘要。
@@ -63,18 +63,27 @@
 
 ## 真实 IM 接入路径
 
-接入方不需要为了 Agent 改写原有消息发送、投递或存储主链路。推荐在 IM 侧增加一个隔离的、只读的 OperationsQuery 门面：
+接入方不需要为了 Agent 改写原有消息发送、投递或存储主链路。目前 Go IM 按职责提供领域只读查询和内部观测：
 
 ```text
 Agent Tool
   -> GoIMConnector
-  -> OperationsQuery（只读查询、鉴权、边界和错误语义）
-  -> IM 现有 RPC / 查询服务 / 观测事件
+  ├─ im.MessageQuery：消息记录、消息搜索
+  ├─ user.UserQuery：最小用户引用
+  └─ operations.ObservationQuery：消息/投递/连接观测
 ```
 
-OperationsQuery 的价值是把 IM 内部的 RPC 语义、数据库字段和错误码隔离在 IM 侧。Agent 只依赖稳定的业务语义，例如 `found=false`、`coverageStatus=partial` 和 `unsupported_capability`，不需要知道 `GetChatLog` 或具体表结构。完整的请求/响应字段、错误语义、能力声明和上线策略见 [OperationsQuery 接入参考](docs/operations-query-integration.md)。
+Connector 隔离具体 IM 的 RPC 协议；Agent 只依赖 `found=false`、`coverageStatus=partial` 等稳定语义。领域配置使用 `GO_IM_QUERY_CONTRACT=domain`，为 MESSAGE、USER、OBSERVATION 分别设置 `GO_IM_<领域>_GRPC_URL` 和 `GO_IM_<领域>_SERVICE_TOKEN`（见 `.env.example`）。公网必须 `GO_IM_INSECURE=false`，私有 CA 可通过 `GO_IM_TLS_CA_PATH` 配置。三类地址可以相同，由 TLS 网关按允许的契约路由。凭证仅留在服务端，不发送给模型或浏览器。
 
-最小接入顺序：
+本机临时加密联调可将明文端点转发到回环地址，并在 Git 忽略的 `.env.go-im-domain.local` 中保存测试配置。运行：
+
+```sh
+node --env-file-if-exists=.env.local --env-file=.env.go-im-domain.local node_modules/vitest/vitest.mjs run src/connectors/go-im/domain-connector.integration.test.ts
+```
+
+该测试只读，不创建用户或消息。存在消息/用户的用例需显式提供隔离测试 ID；未配置的用例会跳过。没有配置新领域地址的已有运行环境暂时保持 legacy；出现部分新配置不会静默回退。公网入口切换和旧契约删除仍是后续上线步骤。
+
+历史单入口的接入顺序（仅迁移期 legacy）：
 
 1. 先实现 `GetCapabilities` 和 `GetMessageRecord`，验证鉴权、超时和 `found=false` 语义。
 2. 再按实际可观测性接入投递时间线和连接观测；没有记录的能力必须返回 `unsupported`，不能用空数组伪造。
